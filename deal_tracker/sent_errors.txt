@@ -1,0 +1,4 @@
+⚠️ Ошибка при обновлении XYZ/USDT на bybit: bybit does not have market symbol XYZ/USDT
+❌ Биржа '' не поддерживается.
+⚠️ Ошибка при обновлении XYТ/USDT на bybit: bybit does not have market symbol XYТ/USDT
+⚠️ Ошибка при обновлении XYT/USD на bybit: bybit does not have market symbol XYT/USD
