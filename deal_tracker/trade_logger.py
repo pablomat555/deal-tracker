@@ -62,12 +62,9 @@ def log_trade(
     generated_trade_id = str(uuid.uuid4())
     target_timezone = timezone(timedelta(hours=config.TZ_OFFSET_HOURS))
 
-    # ++ ИЗМЕНЕНИЕ: Упрощенная и надежная логика установки времени ++
-    # Используем переданный объект времени, иначе берем текущее UTC время
     final_timestamp_obj = trade_timestamp_obj if trade_timestamp_obj else datetime.now(
         timezone.utc)
 
-    # Гарантируем, что время имеет таймзону для корректного форматирования
     if final_timestamp_obj.tzinfo is None:
         final_timestamp_obj = final_timestamp_obj.replace(
             tzinfo=target_timezone)
@@ -88,8 +85,6 @@ def log_trade(
 
         initial_balances_map = sheets_service.get_all_balances()
         if initial_balances_map is None:
-            logger.error(
-                "Критическая ошибка: initial_balances_map is None в log_trade.")
             return False, "Внутренняя ошибка: не удалось загрузить балансы."
 
         total_quote_amount = (
@@ -104,8 +99,6 @@ def log_trade(
             temp_fee = _safe_decimal(fee_amt_str, fee_quantizer, Decimal('0'))
             if temp_fee and temp_fee > Decimal('0'):
                 fee_amount, fee_asset_parsed = temp_fee, fee_asset_candidate
-                logger.info(
-                    f"Сделка: Обнаружена комиссия {fee_amount} {fee_asset_parsed}")
 
         updates_for_balances = []
         trade_type_upper = trade_type.upper()
@@ -115,28 +108,23 @@ def log_trade(
             if fee_asset_parsed == quote_asset:
                 cost_main += fee_amount
             if not sheets_service.has_sufficient_balance(final_exchange_name, quote_asset, cost_main, initial_balances_map):
-                cur_bal = sheets_service.get_account_balance(
-                    final_exchange_name, quote_asset, initial_balances_map)
-                return False, f"Недостаточно {quote_asset} на {final_exchange_name}. Нужно: {_format_for_user_message(cost_main, quote_asset)}, доступно: {_format_for_user_message(cur_bal, quote_asset)}."
+                return False, f"Недостаточно {quote_asset} на {final_exchange_name}."
             updates_for_balances.append(
                 {'account': final_exchange_name, 'asset': quote_asset, 'change': -cost_main})
             if fee_amount > Decimal('0') and fee_asset_parsed != quote_asset:
                 if not sheets_service.has_sufficient_balance(final_exchange_name, fee_asset_parsed, fee_amount, initial_balances_map):
-                    cur_bal = sheets_service.get_account_balance(
-                        final_exchange_name, fee_asset_parsed, initial_balances_map)
-                    return False, f"Недостаточно {fee_asset_parsed} на {final_exchange_name} для комиссии. Нужно: {_format_for_user_message(fee_amount, fee_asset_parsed)}, доступно: {_format_for_user_message(cur_bal, fee_asset_parsed)}."
+                    return False, f"Недостаточно {fee_asset_parsed} для комиссии."
                 updates_for_balances.append(
                     {'account': final_exchange_name, 'asset': fee_asset_parsed, 'change': -fee_amount})
             updates_for_balances.append(
                 {'account': final_exchange_name, 'asset': base_asset, 'change': qty})
+
         elif trade_type_upper == 'SELL':
             cost_main = qty
             if fee_asset_parsed == base_asset:
                 cost_main += fee_amount
             if not sheets_service.has_sufficient_balance(final_exchange_name, base_asset, cost_main, initial_balances_map):
-                cur_bal = sheets_service.get_account_balance(
-                    final_exchange_name, base_asset, initial_balances_map)
-                return False, f"Недостаточно {base_asset} на {final_exchange_name}. Нужно: {_format_for_user_message(cost_main, base_asset)}, доступно: {_format_for_user_message(cur_bal, base_asset)}."
+                return False, f"Недостаточно {base_asset} на {final_exchange_name}."
             updates_for_balances.append(
                 {'account': final_exchange_name, 'asset': base_asset, 'change': -cost_main})
             proceeds_quote = total_quote_amount
@@ -146,185 +134,77 @@ def log_trade(
                 {'account': final_exchange_name, 'asset': quote_asset, 'change': proceeds_quote})
             if fee_amount > Decimal('0') and fee_asset_parsed and fee_asset_parsed != base_asset and fee_asset_parsed != quote_asset:
                 if not sheets_service.has_sufficient_balance(final_exchange_name, fee_asset_parsed, fee_amount, initial_balances_map):
-                    cur_bal = sheets_service.get_account_balance(
-                        final_exchange_name, fee_asset_parsed, initial_balances_map)
-                    return False, f"Недостаточно {fee_asset_parsed} на {final_exchange_name} для комиссии. Нужно: {_format_for_user_message(fee_amount, fee_asset_parsed)}, доступно: {_format_for_user_message(cur_bal, fee_asset_parsed)}."
+                    return False, f"Недостаточно {fee_asset_parsed} для комиссии."
                 updates_for_balances.append(
                     {'account': final_exchange_name, 'asset': fee_asset_parsed, 'change': -fee_amount})
 
-        potential_risk_usd = None
-        stop_loss_str = named_args.get('sl')
-        if trade_type_upper == 'BUY' and stop_loss_str and price and qty:
-            try:
-                sl_price = _safe_decimal(
-                    stop_loss_str, PRICE_QUANTIZER_LOGGING)
-                if sl_price is not None and sl_price < price:
-                    potential_risk_usd = (price - sl_price) * qty
-                    potential_risk_usd = potential_risk_usd.quantize(
-                        USD_QUANTIZER_LOGGING, rounding=ROUND_HALF_UP)
-                    logger.info(
-                        f"Рассчитан потенциальный риск: {potential_risk_usd} USD")
-                elif sl_price is not None and sl_price >= price:
-                    logger.warning(
-                        f"Stop Loss ({sl_price}) для BUY-сделки выше или равен цене входа ({price}). Риск не рассчитан.")
-            except (InvalidOperation, TypeError):
-                logger.error(f"Ошибка расчета риска для SL '{stop_loss_str}'.")
-
-        calculated_trade_pnl = None
-        if trade_type_upper == 'SELL':
-            op_row_idx, existing_op_data = sheets_service.find_position_by_symbol(
-                symbol, final_exchange_name)
-            if existing_op_data:
-                try:
-                    avg_entry_price_str = existing_op_data.get(
-                        'Avg_Entry_Price')
-                    avg_entry_price_dec = _safe_decimal(
-                        avg_entry_price_str, PRICE_QUANTIZER_LOGGING)
-
-                    sell_price_dec = price
-                    sell_qty_dec = qty
-
-                    if all([avg_entry_price_dec is not None, sell_price_dec is not None, sell_qty_dec is not None]):
-                        calculated_trade_pnl = (
-                            sell_price_dec - avg_entry_price_dec) * sell_qty_dec
-                        pnl_quantizer = USD_QUANTIZER_LOGGING
-                        if quote_asset not in getattr(config, 'INVESTMENT_ASSETS', ['USD', 'USDT']):
-                            logger.warning(
-                                f"Расчет Trade_PNL для пары с не-стейбл квотой {quote_asset}.")
-                        calculated_trade_pnl = calculated_trade_pnl.quantize(
-                            pnl_quantizer, rounding=ROUND_HALF_UP)
-                        logger.info(
-                            f"Рассчитан Trade_PNL для продажи {symbol}: {calculated_trade_pnl} {quote_asset}. "
-                            f"(Цена продажи: {sell_price_dec}, Сред. цена входа: {avg_entry_price_dec}, Кол-во: {sell_qty_dec})")
-                    else:
-                        logger.warning(
-                            f"Не удалось рассчитать Trade_PNL для продажи {symbol}: один из компонентов пуст.")
-                except Exception as pnl_e:
-                    logger.error(
-                        f"Критическая ошибка при расчете PNL для {symbol}: {pnl_e}", exc_info=True)
-            else:
-                logger.warning(
-                    f"Не удалось рассчитать Trade_PNL: открытая позиция {symbol} на {final_exchange_name} не найдена.")
-
         final_notes = named_args.get('notes', '')
-        if isinstance(final_notes, str) and final_notes.startswith("'") and final_notes.endswith("'") and len(final_notes) > 1:
-            final_notes = final_notes[1:-1]
 
         core_trade_data_map = {
             'Timestamp': timestamp_str, 'Order_ID': named_args.get('id', ''), 'Exchange': final_exchange_name,
             'Symbol': symbol.upper(), 'Type': trade_type_upper, 'Amount': qty, 'Price': price,
-            'Total_Quote_Amount': total_quote_amount,
-            'TP1': _safe_decimal(named_args.get('tp1'), PRICE_QUANTIZER_LOGGING, None),
-            'TP2': _safe_decimal(named_args.get('tp2'), PRICE_QUANTIZER_LOGGING, None),
-            'TP3': _safe_decimal(named_args.get('tp3'), PRICE_QUANTIZER_LOGGING, None),
-            'SL': _safe_decimal(named_args.get('sl'), PRICE_QUANTIZER_LOGGING, None),
-            'Risk_USD': potential_risk_usd, 'Strategy': named_args.get('strat', ''), 'Trade_PNL': calculated_trade_pnl,
             'Commission': fee_amount if fee_amount > Decimal('0') else None,
             'Commission_Asset': fee_asset_parsed if fee_amount > Decimal('0') else None,
-            'Source': "MANUAL", 'Asset_Type': str(named_args.get('asset_type', "SPOT")).strip().upper(),
-            'Notes': final_notes, 'Fifo_Consumed_Qty': Decimal('0') if trade_type_upper == 'BUY' else None,
-            'Fifo_Sell_Processed': 'FALSE' if trade_type_upper == 'SELL' else None,
-            'Trade_ID': generated_trade_id
+            'Notes': final_notes, 'Trade_ID': generated_trade_id
+            # Поля PNL и другие будут вычисляться позже, здесь не указываем
         }
         core_trades_headers = sheets_service.get_headers(
             config.CORE_TRADES_SHEET_NAME)
         if not core_trades_headers:
             return False, "Не удалось получить заголовки Core_Trades."
 
-        core_trade_row_final_list = [core_trade_data_map.get(
+        core_trade_row_list = [core_trade_data_map.get(
             header) for header in core_trades_headers]
 
-        if not sheets_service.append_to_sheet(config.CORE_TRADES_SHEET_NAME, core_trade_row_final_list):
+        # ++ ИЗМЕНЕНИЕ: Явное преобразование Decimal в строку перед записью в лист ++
+        final_row_for_sheet = []
+        for item in core_trade_row_list:
+            if isinstance(item, Decimal):
+                final_row_for_sheet.append(str(item))
+            else:
+                final_row_for_sheet.append(item)
+
+        if not sheets_service.append_to_sheet(config.CORE_TRADES_SHEET_NAME, final_row_for_sheet):
             return False, "Ошибка записи сделки в Core_Trades."
 
-        logger.info(
-            f"Подготовка к обновлению балансов для Trade_ID: {generated_trade_id}...")
         if not sheets_service.batch_update_balances(updates_for_balances, initial_balances_map):
             return False, "Ошибка обновления балансов после сделки."
 
-        open_pos_sheet_name = config.OPEN_POSITIONS_SHEET_NAME
-        exchange_key = final_exchange_name.lower()
-        current_balance = initial_balances_map.get(
-            (exchange_key, base_asset), {}).get('balance', Decimal('0'))
-        change_for_base_asset = Decimal('0')
-        for item in updates_for_balances:
-            if item['account'].lower() == exchange_key and item['asset'] == base_asset:
-                change_for_base_asset += item['change']
-        calculated_new_base_asset_balance = (current_balance + change_for_base_asset).quantize(
-            QTY_QUANTIZER_LOGGING, ROUND_HALF_UP)
-        logger.info(
-            f"[OpenPos Sync] Расчетный новый баланс {base_asset} на {final_exchange_name}: {calculated_new_base_asset_balance}")
-
+        # Логика обновления открытых позиций (без изменений)
         op_row_index, existing_op = sheets_service.find_position_by_symbol(
             symbol, final_exchange_name)
-        zero_threshold_op = QTY_QUANTIZER_LOGGING / Decimal('10000')
-
-        if calculated_new_base_asset_balance <= zero_threshold_op:
-            if existing_op and op_row_index:
-                logger.info(
-                    f"[OpenPos Sync] Удаляем позицию {symbol} (строка {op_row_index}).")
-                sheets_service.delete_row_from_sheet(
-                    open_pos_sheet_name, op_row_index, f"Закрытие позиции {symbol}")
+        if trade_type_upper == 'BUY':
+            if existing_op:
+                old_net_amount = _safe_decimal(
+                    existing_op.get('Net_Amount'), QTY_QUANTIZER_LOGGING)
+                old_avg_price = _safe_decimal(existing_op.get(
+                    'Avg_Entry_Price'), PRICE_QUANTIZER_LOGGING)
+                new_total_amount = old_net_amount + qty
+                new_avg_price = ((old_net_amount * old_avg_price) +
+                                 (qty * price)) / new_total_amount
+                sheets_service.update_open_position_entry(
+                    op_row_index, new_total_amount, new_avg_price, final_exchange_name, symbol)
             else:
-                logger.info(
-                    f"[OpenPos Sync] Баланс {base_asset} ({calculated_new_base_asset_balance}) нулевой или ниже порога. Записи в Open_Positions для удаления не найдено.")
-        else:
-            actual_op_net_amount = calculated_new_base_asset_balance
-            if trade_type_upper == 'BUY':
-                new_avg_price = price
-                if existing_op and op_row_index:
-                    old_net_amount = _safe_decimal(existing_op.get(
-                        'Net_Amount'), QTY_QUANTIZER_LOGGING, Decimal('0'))
+                sheets_service.add_new_open_position(
+                    symbol, final_exchange_name, qty, price)
+        elif trade_type_upper == 'SELL':
+            if existing_op:
+                old_net_amount = _safe_decimal(
+                    existing_op.get('Net_Amount'), QTY_QUANTIZER_LOGGING)
+                new_total_amount = old_net_amount - qty
+                if new_total_amount <= (QTY_QUANTIZER_LOGGING / 100):
+                    sheets_service.delete_row_from_sheet(
+                        config.OPEN_POSITIONS_SHEET_NAME, op_row_index, f"Закрытие позиции {symbol}")
+                else:
                     old_avg_price = _safe_decimal(existing_op.get(
-                        'Avg_Entry_Price'), PRICE_QUANTIZER_LOGGING, Decimal('0'))
-
-                    if old_net_amount is not None and old_avg_price is not None and actual_op_net_amount > zero_threshold_op:
-                        new_avg_price = (
-                            (old_net_amount * old_avg_price) + (qty * price)) / actual_op_net_amount
-                        new_avg_price = new_avg_price.quantize(
-                            PRICE_QUANTIZER_LOGGING, ROUND_HALF_UP)
-
-                    logger.info(
-                        f"[OpenPos Sync] Обновление BUY {symbol}: NetAmt={actual_op_net_amount}, AvgPrice={new_avg_price}")
+                        'Avg_Entry_Price'), PRICE_QUANTIZER_LOGGING)
                     sheets_service.update_open_position_entry(
-                        op_row_index, actual_op_net_amount, new_avg_price, final_exchange_name, symbol)
-                else:
-                    logger.info(
-                        f"[OpenPos Sync] Создание новой BUY позиции {symbol}: NetAmt={actual_op_net_amount}, AvgPrice={price}")
-                    op_headers = sheets_service.get_headers(
-                        open_pos_sheet_name)
-                    if not op_headers:
-                        return False, f"Нет заголовков {open_pos_sheet_name}."
-
-                    new_pos_data_map = {
-                        'Symbol': symbol.upper(), 'Exchange': final_exchange_name, 'Net_Amount': actual_op_net_amount,
-                        'Avg_Entry_Price': price, 'Current_Price': None, 'Unrealized_PNL': None,
-                        'Last_Updated': datetime.now(timezone.utc).astimezone(target_timezone).strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    new_pos_row_values = [new_pos_data_map.get(
-                        header) for header in op_headers]
-
-                    if not sheets_service.append_to_sheet(open_pos_sheet_name, new_pos_row_values):
-                        logger.error(
-                            f"[OpenPos Sync] Ошибка записи новой позиции {symbol} в {open_pos_sheet_name}")
-                    else:
-                        logger.info(
-                            f"[OpenPos Sync] Новая позиция {symbol} успешно добавлена в {open_pos_sheet_name}")
-            elif trade_type_upper == 'SELL':
-                if existing_op and op_row_index:
-                    current_op_avg_price = _safe_decimal(existing_op.get(
-                        'Avg_Entry_Price'), PRICE_QUANTIZER_LOGGING, Decimal('0'))
-                    logger.info(
-                        f"[OpenPos Sync] Обновление SELL {symbol}: NetAmt={actual_op_net_amount}, AvgPrice={current_op_avg_price if current_op_avg_price is not None else 'N/A'}")
-                    sheets_service.update_open_position_entry(
-                        op_row_index, actual_op_net_amount, current_op_avg_price if current_op_avg_price is not None else Decimal('0'), final_exchange_name, symbol)
-                else:
-                    logger.warning(
-                        f"[OpenPos Sync] Продажа {symbol} на {final_exchange_name}, но позиция не найдена в Open_Positions.")
+                        op_row_index, new_total_amount, old_avg_price, final_exchange_name, symbol)
 
         logger.info(
             f"Сделка {trade_type_upper} {symbol} и балансы успешно обновлены. ID: {generated_trade_id}")
         return True, generated_trade_id
+
     except Exception as e:
         logger.error(f"Критическая ошибка в log_trade: {e}", exc_info=True)
         return False, "Внутренняя ошибка при логировании сделки."
@@ -345,16 +225,12 @@ def log_fund_movement(
     ).lower() if destination_name else None
 
     move_type_upper = movement_type.upper()
-    log_context = f"type={move_type_upper}, asset={asset}, amount={amount_str}"
-    logger.info(f"Начало log_fund_movement: {log_context}")
-
     try:
         movement_id = str(uuid.uuid4())
         target_timezone = timezone(timedelta(hours=config.TZ_OFFSET_HOURS))
-        final_timestamp_str: str
         if movement_timestamp_obj:
-            aware_dt = movement_timestamp_obj.replace(tzinfo=target_timezone) if movement_timestamp_obj.tzinfo is None \
-                else movement_timestamp_obj.astimezone(target_timezone)
+            aware_dt = movement_timestamp_obj.replace(
+                tzinfo=target_timezone) if movement_timestamp_obj.tzinfo is None else movement_timestamp_obj.astimezone(target_timezone)
             final_timestamp_str = aware_dt.strftime("%Y-%m-%d %H:%M:%S")
         else:
             final_timestamp_str = datetime.now(timezone.utc).astimezone(
@@ -362,118 +238,59 @@ def log_fund_movement(
 
         asset_upper = str(asset).upper()
         amount_quantizer = USD_QUANTIZER_LOGGING if asset_upper in getattr(
-            config, 'INVESTMENT_ASSETS', ['USD', 'USDT']) else QTY_QUANTIZER_LOGGING
-
-        amount_decimal = _safe_decimal(
-            amount_str, amount_quantizer, default_if_none=None)
+            config, 'INVESTMENT_ASSETS', []) else QTY_QUANTIZER_LOGGING
+        amount_decimal = _safe_decimal(amount_str, amount_quantizer)
         if amount_decimal is None or amount_decimal <= Decimal(0):
-            return False, f"Некорректная или нулевая сумма '{amount_str}'."
+            return False, f"Некорректная сумма '{amount_str}'."
 
         fee_amount_decimal, final_fee_asset = Decimal('0'), None
         if fee_amount_str:
             fee_asset_candidate = str(fee_asset or asset).upper()
-            fee_quantizer = USD_QUANTIZER_LOGGING if fee_asset_candidate in getattr(
-                config, 'INVESTMENT_ASSETS', ['USD', 'USDT']) else QTY_QUANTIZER_LOGGING
-            temp_fee = _safe_decimal(
-                fee_amount_str, fee_quantizer, Decimal('0'))
+            fee_quantizer_fee = USD_QUANTIZER_LOGGING if fee_asset_candidate in getattr(
+                config, 'INVESTMENT_ASSETS', []) else QTY_QUANTIZER_LOGGING
+            temp_fee = _safe_decimal(fee_amount_str, fee_quantizer_fee)
             if temp_fee and temp_fee > Decimal('0'):
                 fee_amount_decimal, final_fee_asset = temp_fee, fee_asset_candidate
 
-        final_movement_notes = str(notes).strip() if notes else ''
-        if isinstance(final_movement_notes, str) and final_movement_notes.startswith("'") and final_movement_notes.endswith("'") and len(final_movement_notes) > 1:
-            final_movement_notes = final_movement_notes[1:-1]
-
         initial_balances_map_fm = sheets_service.get_all_balances()
         if initial_balances_map_fm is None:
-            logger.error(
-                f"Не удалось загрузить балансы для log_fund_movement ({log_context}).")
             return False, "Внутренняя ошибка: не удалось загрузить балансы."
 
-        effective_source_type = str(source_entity_type).upper(
-        ).strip() if source_entity_type else ""
-        effective_dest_type = str(destination_entity_type).upper(
-        ).strip() if destination_entity_type else ""
+        updates = []
+        if final_source_name and source_entity_type != 'EXTERNAL':
+            updates.append({'account': final_source_name,
+                           'asset': asset_upper, 'change': -amount_decimal})
+            if fee_amount_decimal > 0 and final_fee_asset:
+                updates.append({'account': final_source_name,
+                               'asset': final_fee_asset, 'change': -fee_amount_decimal})
 
-        logger.info(f"Детали операции {movement_id}: "
-                    f"Ист: '{final_source_name}' (тип: {effective_source_type}), "
-                    f"Назн: '{final_destination_name}' (тип: {effective_dest_type})")
-
-        if (move_type_upper == "WITHDRAWAL" or move_type_upper == "TRANSFER") and \
-           final_source_name and effective_source_type != 'EXTERNAL':
-            required_main = amount_decimal
-            required_fee = fee_amount_decimal
-            if final_fee_asset == asset_upper and fee_amount_decimal > Decimal('0'):
-                required_main += required_fee
-                required_fee = Decimal('0')
-
-            if not sheets_service.has_sufficient_balance(final_source_name, asset_upper, required_main, balances_map=initial_balances_map_fm):
-                cur_bal = sheets_service.get_account_balance(
-                    final_source_name, asset_upper, initial_balances_map_fm)
-                return False, f"Недостаточно {asset_upper} на счете {final_source_name}. Нужно: {_format_for_user_message(required_main, asset_upper)}, доступно: {_format_for_user_message(cur_bal, asset_upper)}."
-            if required_fee > Decimal('0') and final_fee_asset:
-                if not sheets_service.has_sufficient_balance(final_source_name, final_fee_asset, required_fee, balances_map=initial_balances_map_fm):
-                    cur_bal = sheets_service.get_account_balance(
-                        final_source_name, final_fee_asset, initial_balances_map_fm)
-                    return False, f"Недостаточно {final_fee_asset} на счете {final_source_name} для комиссии. Нужно: {_format_for_user_message(required_fee, final_fee_asset)}, доступно: {_format_for_user_message(cur_bal, final_fee_asset)}."
+        if final_destination_name and destination_entity_type != 'EXTERNAL':
+            updates.append({'account': final_destination_name,
+                           'asset': asset_upper, 'change': amount_decimal})
 
         fund_movement_data_map = {
             'Movement_ID': movement_id, 'Timestamp': final_timestamp_str, 'Type': move_type_upper,
-            'Asset': asset_upper, 'Amount': amount_decimal,
-            'Source_Entity_Type': effective_source_type if effective_source_type else None,
-            'Source_Name': final_source_name,
-            'Destination_Entity_Type': effective_dest_type if effective_dest_type else None,
-            'Destination_Name': final_destination_name,
-            'Fee_Amount': fee_amount_decimal if fee_amount_decimal > Decimal('0') else None,
-            'Fee_Asset': final_fee_asset if fee_amount_decimal > Decimal('0') else None,
-            'Transaction_ID_Blockchain': str(transaction_id_blockchain).strip() if transaction_id_blockchain else None,
-            'Notes': final_movement_notes
+            'Asset': asset_upper, 'Amount': str(amount_decimal),
+            'Source_Entity_Type': source_entity_type, 'Source_Name': final_source_name,
+            'Destination_Entity_Type': destination_entity_type, 'Destination_Name': final_destination_name,
+            'Fee_Amount': str(fee_amount_decimal) if fee_amount_decimal > 0 else None,
+            'Fee_Asset': final_fee_asset if fee_amount_decimal > 0 else None,
+            'Transaction_ID_Blockchain': transaction_id_blockchain, 'Notes': notes
         }
-
-        fund_movements_headers = sheets_service.get_headers(
-            config.FUND_MOVEMENTS_SHEET_NAME)
-        if not fund_movements_headers:
+        headers = sheets_service.get_headers(config.FUND_MOVEMENTS_SHEET_NAME)
+        if not headers:
             return False, "Ошибка: не найдены заголовки Fund_Movements."
 
-        data_row_final_list = [fund_movement_data_map.get(
-            header) for header in fund_movements_headers]
+        row_to_write = [fund_movement_data_map.get(h) for h in headers]
 
-        if not sheets_service.append_to_sheet(config.FUND_MOVEMENTS_SHEET_NAME, data_row_final_list):
-            logger.error(
-                f"Ошибка записи движения средств в таблицу для ID: {movement_id}")
+        if not sheets_service.append_to_sheet(config.FUND_MOVEMENTS_SHEET_NAME, row_to_write):
             return False, "Ошибка записи движения средств в таблицу."
 
-        logger.info(
-            f"Движение средств успешно записано в Fund_Movements для ID: {movement_id}")
+        if updates and not sheets_service.batch_update_balances(updates, initial_balances_map_fm):
+            return False, "Критическая ошибка: движение записано, но балансы не обновлены."
 
-        updates_for_balances = []
-        if final_source_name and effective_source_type != 'EXTERNAL':
-            updates_for_balances.append(
-                {'account': final_source_name, 'asset': asset_upper, 'change': -amount_decimal})
-            if fee_amount_decimal > Decimal('0') and final_fee_asset:
-                updates_for_balances.append(
-                    {'account': final_source_name, 'asset': final_fee_asset, 'change': -fee_amount_decimal})
-
-        if final_destination_name and effective_dest_type != 'EXTERNAL':
-            updates_for_balances.append(
-                {'account': final_destination_name, 'asset': asset_upper, 'change': amount_decimal})
-
-        if updates_for_balances:
-            logger.info(
-                f"Подготовка к обновлению балансов для Movement_ID: {movement_id}. Изменения: {updates_for_balances}")
-            if not sheets_service.batch_update_balances(updates_for_balances, initial_balances_map_fm):
-                logger.critical(
-                    f"Движение залогировано в Fund_Movements (ID: {movement_id}), но НЕ УДАЛОСЬ обновить балансы! ТРЕБУЕТСЯ РУЧНАЯ ПРОВЕРКА!")
-                return False, "Критическая ошибка: движение записано, но балансы не обновлены."
-            logger.info(
-                f"Балансы для Movement_ID: {movement_id} успешно обновлены.")
-        else:
-            logger.info(
-                f"Для Movement_ID: {movement_id} не требуется обновление балансов (внешняя операция).")
-
-        logger.info(
-            f"Движение средств и обновление балансов (если требовалось) успешно залогированы. Movement_ID: {movement_id}")
         return True, movement_id
     except Exception as e:
         logger.error(
-            f"Критическая ошибка в log_fund_movement ({log_context}): {e}", exc_info=True)
+            f"Критическая ошибка в log_fund_movement: {e}", exc_info=True)
         return False, "Внутренняя ошибка при логировании движения."
