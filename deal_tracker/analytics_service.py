@@ -54,25 +54,27 @@ def _calculate_pnl_metrics(fifo_logs: list[dict], open_positions: list[dict]) ->
 def _calculate_trade_stats(fifo_logs: list[dict]) -> dict:
     """Рассчитывает статистику по закрытым сделкам."""
     logger.info("Расчет статистики по сделкам...")
-    total_trades_closed = len(fifo_logs)
-    winning_trades_closed, losing_trades_closed = 0, 0
+
+    # ++ ИЗМЕНЕНИЕ: Все счетчики теперь Decimal для консистентности и исправления ошибки quantize ++
+    total_trades_closed = Decimal(len(fifo_logs))
+    winning_trades_closed, losing_trades_closed = Decimal('0'), Decimal('0')
     total_win_amount, total_loss_amount = Decimal('0'), Decimal('0')
 
     for log_entry in fifo_logs:
         pnl = _safe_decimal_analytics(log_entry.get('Fifo_PNL'))
         if pnl > Decimal('0'):
-            winning_trades_closed += 1
+            winning_trades_closed += Decimal('1')
             total_win_amount += pnl
         elif pnl < Decimal('0'):
-            losing_trades_closed += 1
+            losing_trades_closed += Decimal('1')
             total_loss_amount += abs(pnl)
 
-    win_rate_percent = (Decimal(winning_trades_closed) / Decimal(total_trades_closed)
-                        * 100) if total_trades_closed > 0 else Decimal('0')
-    average_win_amount = (total_win_amount / Decimal(winning_trades_closed)
-                          ) if winning_trades_closed > 0 else Decimal('0')
-    average_loss_amount = (total_loss_amount / Decimal(losing_trades_closed)
-                           ) if losing_trades_closed > 0 else Decimal('0')
+    win_rate_percent = (winning_trades_closed / total_trades_closed *
+                        100) if total_trades_closed > 0 else Decimal('0')
+    average_win_amount = (
+        total_win_amount / winning_trades_closed) if winning_trades_closed > 0 else Decimal('0')
+    average_loss_amount = (
+        total_loss_amount / losing_trades_closed) if losing_trades_closed > 0 else Decimal('0')
 
     profit_factor_str = "N/A"
     if total_win_amount > Decimal('0') and total_loss_amount == Decimal('0'):
@@ -85,9 +87,9 @@ def _calculate_trade_stats(fifo_logs: list[dict]) -> dict:
         profit_factor_str = sheets_service.format_value_for_sheet(
             Decimal('0').quantize(Decimal("0.01")))
 
-    expectancy = ((win_rate_percent / 100 * average_win_amount) -
-                  ((Decimal(losing_trades_closed) / Decimal(total_trades_closed) if total_trades_closed > 0 else Decimal('0')) * average_loss_amount)) \
-        if total_trades_closed > 0 else Decimal('0')
+    expectancy = ((win_rate_percent / 100 * average_win_amount) - ((losing_trades_closed / total_trades_closed if total_trades_closed >
+                  0 else Decimal('0')) * average_loss_amount)) if total_trades_closed > 0 else Decimal('0')
+
     logger.info(
         f"Статистика по сделкам: TotalClosed={total_trades_closed}, WinRate={win_rate_percent:.2f}%")
     return {
@@ -277,7 +279,6 @@ def process_fifo_transactions() -> tuple[bool, str]:
                     continue
                 fifo_pnl = (sell_price - buy_price) * matched_qty
 
-                # ++ НАЧАЛО ИЗМЕНЕНИЯ ++
                 fifo_log_entries_to_add.append([
                     sell_symbol,
                     buy_trade_id,
@@ -290,7 +291,6 @@ def process_fifo_transactions() -> tuple[bool, str]:
                     buy_timestamp_obj.strftime("%Y-%m-%d %H:%M:%S"),
                     sell_trade.get('Exchange')
                 ])
-                # -- КОНЕЦ ИЗМЕНЕНИЯ --
 
                 buy_trade['Current_Run_Consumed_Qty_dec'] += matched_qty
                 final_consumed_for_buy = buy_trade['Initial_Fifo_Consumed_Qty_dec'] + \
@@ -390,7 +390,13 @@ def calculate_and_update_analytics_sheet(triggered_by_context: str = "scheduled_
                 pnl_metrics['total_unrealized_pnl_open'].quantize(Decimal(config.USD_DISPLAY_PRECISION))),
             sheets_service.format_value_for_sheet(
                 pnl_metrics['net_total_pnl'].quantize(Decimal(config.USD_DISPLAY_PRECISION))),
-            trade_stats['total_trades_closed'], trade_stats['winning_trades_closed'], trade_stats['losing_trades_closed'],
+            # ++ ИЗМЕНЕНИЕ: передаем Decimal как есть, форматирование внутри sheets_service ++
+            sheets_service.format_value_for_sheet(
+                trade_stats['total_trades_closed']),
+            sheets_service.format_value_for_sheet(
+                trade_stats['winning_trades_closed']),
+            sheets_service.format_value_for_sheet(
+                trade_stats['losing_trades_closed']),
             sheets_service.format_value_for_sheet(
                 trade_stats['win_rate_percent'].quantize(Decimal("0.01"))),
             sheets_service.format_value_for_sheet(

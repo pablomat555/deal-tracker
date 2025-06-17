@@ -54,35 +54,26 @@ def _format_for_user_message(value: Decimal | None, asset_name: str | None = Non
 
 
 def log_trade(
-    trade_type: str, symbol: str, qty_str: str, price_str: str, source: str,
-    exchange_position_name: str | None = None, strategy_position_name: str | None = None,
-    optional_fields: dict | None = None, order_id: str | None = None,
-    asset_type: str | None = "SPOT"
+    trade_type: str, symbol: str, qty_str: str, price_str: str,
+    exchange_name: str,
+    named_args: dict,
+    trade_timestamp_obj: datetime | None = None
 ) -> tuple[bool, str | None]:
     generated_trade_id = str(uuid.uuid4())
     target_timezone = timezone(timedelta(hours=config.TZ_OFFSET_HOURS))
-    final_timestamp_obj = datetime.now(
-        timezone.utc).astimezone(target_timezone)
-    if optional_fields is None:
-        optional_fields = {}
 
-    date_input_str = optional_fields.get('date')
-    if date_input_str:
-        try:
-            date_input_str = date_input_str.strip()
-            dt_obj = None
-            if len(date_input_str) == 19:
-                dt_obj = datetime.strptime(date_input_str, "%Y-%m-%d %H:%M:%S")
-            elif len(date_input_str) == 16:
-                dt_obj = datetime.strptime(date_input_str, "%Y-%m-%d %H:%M")
-            elif len(date_input_str) == 10:
-                dt_obj = datetime.strptime(
-                    date_input_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-            if dt_obj:
-                final_timestamp_obj = dt_obj.replace(tzinfo=target_timezone)
-        except ValueError:
-            logger.warning(
-                f"Ошибка парсинга даты '{date_input_str}'. Исп. текущее время.")
+    # ++ ИЗМЕНЕНИЕ: Упрощенная и надежная логика установки времени ++
+    # Используем переданный объект времени, иначе берем текущее UTC время
+    final_timestamp_obj = trade_timestamp_obj if trade_timestamp_obj else datetime.now(
+        timezone.utc)
+
+    # Гарантируем, что время имеет таймзону для корректного форматирования
+    if final_timestamp_obj.tzinfo is None:
+        final_timestamp_obj = final_timestamp_obj.replace(
+            tzinfo=target_timezone)
+    else:
+        final_timestamp_obj = final_timestamp_obj.astimezone(target_timezone)
+
     timestamp_str = final_timestamp_obj.strftime("%Y-%m-%d %H:%M:%S")
 
     try:
@@ -93,11 +84,7 @@ def log_trade(
         if not all([qty, price, base_asset, quote_asset]) or qty <= Decimal('0') or price <= Decimal('0'):
             return False, "Количество, цена или символ указаны некорректно."
 
-        # ИСПРАВЛЕНО: Приводим имя биржи к нижнему регистру в самом начале
-        final_exchange_name = (
-            exchange_position_name or optional_fields.get('exch', '')).strip().lower()
-        if not final_exchange_name:
-            return False, "Не указана биржа (exch:ИМЯ_БИРЖИ)."
+        final_exchange_name = exchange_name.strip().lower()
 
         initial_balances_map = sheets_service.get_all_balances()
         if initial_balances_map is None:
@@ -107,8 +94,8 @@ def log_trade(
 
         total_quote_amount = (
             qty * price).quantize(USD_QUANTIZER_LOGGING, rounding=ROUND_HALF_UP)
-        fee_amt_str = optional_fields.get('fee', optional_fields.get('com'))
-        fee_asset_str = optional_fields.get('fee_asset')
+        fee_amt_str = named_args.get('fee', named_args.get('com'))
+        fee_asset_str = named_args.get('fee_asset')
         fee_amount = Decimal('0')
         fee_asset_parsed = None
         if fee_amt_str:
@@ -166,7 +153,7 @@ def log_trade(
                     {'account': final_exchange_name, 'asset': fee_asset_parsed, 'change': -fee_amount})
 
         potential_risk_usd = None
-        stop_loss_str = optional_fields.get('sl')
+        stop_loss_str = named_args.get('sl')
         if trade_type_upper == 'BUY' and stop_loss_str and price and qty:
             try:
                 sl_price = _safe_decimal(
@@ -200,15 +187,12 @@ def log_trade(
                     if all([avg_entry_price_dec is not None, sell_price_dec is not None, sell_qty_dec is not None]):
                         calculated_trade_pnl = (
                             sell_price_dec - avg_entry_price_dec) * sell_qty_dec
-
                         pnl_quantizer = USD_QUANTIZER_LOGGING
                         if quote_asset not in getattr(config, 'INVESTMENT_ASSETS', ['USD', 'USDT']):
                             logger.warning(
                                 f"Расчет Trade_PNL для пары с не-стейбл квотой {quote_asset}.")
-
                         calculated_trade_pnl = calculated_trade_pnl.quantize(
                             pnl_quantizer, rounding=ROUND_HALF_UP)
-
                         logger.info(
                             f"Рассчитан Trade_PNL для продажи {symbol}: {calculated_trade_pnl} {quote_asset}. "
                             f"(Цена продажи: {sell_price_dec}, Сред. цена входа: {avg_entry_price_dec}, Кол-во: {sell_qty_dec})")
@@ -222,22 +206,22 @@ def log_trade(
                 logger.warning(
                     f"Не удалось рассчитать Trade_PNL: открытая позиция {symbol} на {final_exchange_name} не найдена.")
 
-        final_notes = optional_fields.get('notes', '')
+        final_notes = named_args.get('notes', '')
         if isinstance(final_notes, str) and final_notes.startswith("'") and final_notes.endswith("'") and len(final_notes) > 1:
             final_notes = final_notes[1:-1]
 
         core_trade_data_map = {
-            'Timestamp': timestamp_str, 'Order_ID': optional_fields.get('id', ''), 'Exchange': final_exchange_name,
+            'Timestamp': timestamp_str, 'Order_ID': named_args.get('id', ''), 'Exchange': final_exchange_name,
             'Symbol': symbol.upper(), 'Type': trade_type_upper, 'Amount': qty, 'Price': price,
             'Total_Quote_Amount': total_quote_amount,
-            'TP1': _safe_decimal(optional_fields.get('tp1'), PRICE_QUANTIZER_LOGGING, None),
-            'TP2': _safe_decimal(optional_fields.get('tp2'), PRICE_QUANTIZER_LOGGING, None),
-            'TP3': _safe_decimal(optional_fields.get('tp3'), PRICE_QUANTIZER_LOGGING, None),
-            'SL': _safe_decimal(optional_fields.get('sl'), PRICE_QUANTIZER_LOGGING, None),
-            'Risk_USD': potential_risk_usd, 'Strategy': optional_fields.get('strat', ''), 'Trade_PNL': calculated_trade_pnl,
+            'TP1': _safe_decimal(named_args.get('tp1'), PRICE_QUANTIZER_LOGGING, None),
+            'TP2': _safe_decimal(named_args.get('tp2'), PRICE_QUANTIZER_LOGGING, None),
+            'TP3': _safe_decimal(named_args.get('tp3'), PRICE_QUANTIZER_LOGGING, None),
+            'SL': _safe_decimal(named_args.get('sl'), PRICE_QUANTIZER_LOGGING, None),
+            'Risk_USD': potential_risk_usd, 'Strategy': named_args.get('strat', ''), 'Trade_PNL': calculated_trade_pnl,
             'Commission': fee_amount if fee_amount > Decimal('0') else None,
             'Commission_Asset': fee_asset_parsed if fee_amount > Decimal('0') else None,
-            'Source': source, 'Asset_Type': str(optional_fields.get('asset_type', asset_type)).strip().upper(),
+            'Source': "MANUAL", 'Asset_Type': str(named_args.get('asset_type', "SPOT")).strip().upper(),
             'Notes': final_notes, 'Fifo_Consumed_Qty': Decimal('0') if trade_type_upper == 'BUY' else None,
             'Fifo_Sell_Processed': 'FALSE' if trade_type_upper == 'SELL' else None,
             'Trade_ID': generated_trade_id
@@ -259,20 +243,15 @@ def log_trade(
             return False, "Ошибка обновления балансов после сделки."
 
         open_pos_sheet_name = config.OPEN_POSITIONS_SHEET_NAME
-
         exchange_key = final_exchange_name.lower()
-
         current_balance = initial_balances_map.get(
             (exchange_key, base_asset), {}).get('balance', Decimal('0'))
-
         change_for_base_asset = Decimal('0')
         for item in updates_for_balances:
             if item['account'].lower() == exchange_key and item['asset'] == base_asset:
                 change_for_base_asset += item['change']
-
         calculated_new_base_asset_balance = (current_balance + change_for_base_asset).quantize(
             QTY_QUANTIZER_LOGGING, ROUND_HALF_UP)
-
         logger.info(
             f"[OpenPos Sync] Расчетный новый баланс {base_asset} на {final_exchange_name}: {calculated_new_base_asset_balance}")
 
@@ -361,7 +340,6 @@ def log_fund_movement(
     movement_timestamp_obj: datetime | None = None
 ) -> tuple[bool, str | None]:
 
-    # ИСПРАВЛЕНО: Приводим имена счетов к нижнему регистру в самом начале
     final_source_name = source_name.strip().lower() if source_name else None
     final_destination_name = destination_name.strip(
     ).lower() if destination_name else None
