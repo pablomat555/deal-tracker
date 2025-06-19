@@ -586,66 +586,62 @@ async def average_command(update: Update, context: CallbackContext) -> None:
 
 
 @admin_only
-async def movements_command(update: Update, context: CallbackContext) -> None:
-    user = update.effective_user
-    command_text = update.message.text
+async def movement_command(update: Update, context: CallbackContext, move_type: str) -> None:
+    """Общий обработчик для /deposit, /withdraw, /transfer."""
+    command_name = update.message.text.split(' ')[0].lower()
     logger.info(
-        f"Command '/movements' (текст: '{command_text}') от user {user.id} ({user.username or 'N/A'}).")
-    try:
-        movements = sheets_service.get_all_fund_movements()
-        if movements is None:
-            logger.error(
-                f"Ошибка получения движений средств для /movements (user: {user.id}). sheets_service.get_all_fund_movements вернул None.")
-            await update.message.reply_text("❌ Не удалось загрузить историю движения средств. Проверьте логи сервера.")
-            return
-        if not movements:
-            await update.message.reply_text("Нет записей о движении средств.")
-            return
+        f"Команда {command_name} от {update.effective_user.id}. Аргументы: {context.args}")
 
-        reply_text = "<u><b>Детальное Движение Средств (макс 10):</b></u>\n"
-        def get_movement_datetime(item): ts = item.get('Timestamp'); return datetime.strptime(
-            ts, "%Y-%m-%d %H:%M:%S") if ts else datetime.min
-        sorted_movements = sorted(
-            movements, key=get_movement_datetime, reverse=True)
-        for move in sorted_movements[:10]:
-            try:
-                amount_str = move.get('Amount', '0')
-                asset_display = move.get('Asset', '')
-                is_stable = asset_display.upper() in [
-                    'USD', 'EUR', 'USDT', 'USDC', 'DAI', 'BUSD', config.DEFAULT_DEPOSIT_WITHDRAW_ASSET.upper()]
-                prec_str = config.USD_DISPLAY_PRECISION if is_stable else config.QTY_DISPLAY_PRECISION
-                amount_dec = Decimal(str(amount_str).replace(
-                    ',', '.')).quantize(Decimal(prec_str))
-            except (InvalidOperation, TypeError) as e_format:
-                logger.warning(
-                    f"Ошибка форматирования суммы движения в /movements для user {user.id}: {move}. Ошибка: {e_format}")
-                amount_dec = "N/A"
-            reply_text += (f"{move.get('Timestamp')} - <b>{move.get('Type')} {amount_dec} {move.get('Asset')}</b>\n"
-                           f"  <pre>Из: {move.get('Source_Name')} ({move.get('Source_Entity_Type')})\n"
-                           f"  В:  {move.get('Destination_Name')} ({move.get('Destination_Entity_Type')})</pre>\n")
-            fee_amount_str = move.get('Fee_Amount')
-            if fee_amount_str and str(fee_amount_str).strip() and Decimal(str(fee_amount_str).replace(',', '.')) > Decimal('0'):
-                try:
-                    fee_asset = move.get('Fee_Asset', '')
-                    is_stable_fee = fee_asset.upper(
-                    ) in ['USD', 'EUR', 'USDT', 'USDC', 'DAI', 'BUSD']
-                    fee_prec_str = config.USD_DISPLAY_PRECISION if is_stable_fee else config.QTY_DISPLAY_PRECISION
-                    fee_dec = Decimal(str(fee_amount_str).replace(
-                        ',', '.')).quantize(Decimal(fee_prec_str))
-                    reply_text += f"  Комиссия: {fee_dec} {fee_asset}\n"
-                except (InvalidOperation, TypeError):
-                    reply_text += f"  Комиссия: {fee_amount_str} {move.get('Fee_Asset','')}\n"
-            if move.get('Notes'):
-                reply_text += f"  Заметка: <i>{move.get('Notes')}</i>\n"
-            reply_text += "\n"
-        if len(reply_text) > 4090:
-            reply_text = reply_text[:4085] + "\n..."
-        await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
+    pos_args, named_args = parse_command_args_advanced(list(context.args), 4)
 
-    except Exception as e:
-        logger.error(
-            f"Критическая ошибка в /movements от user {user.id}. Ошибка: {e}", exc_info=True)
-        await update.message.reply_text("❌ Произошла ошибка при получении истории движения средств.")
+    if (move_type in ['DEPOSIT', 'WITHDRAWAL'] and len(pos_args) < 2) or \
+       (move_type == 'TRANSFER' and len(pos_args) < 3):
+        await update.message.reply_text("Ошибка: недостаточно аргументов для команды.", parse_mode=ParseMode.HTML)
+        return
+
+    asset = pos_args[0]
+    amount_dec = utils.parse_decimal(pos_args[1])
+    if not amount_dec or amount_dec <= Decimal('0'):
+        await update.message.reply_text("Ошибка: некорректная сумма.", parse_mode=ParseMode.HTML)
+        return
+
+    kwargs = {}
+    if move_type == 'DEPOSIT':
+        kwargs['destination_name'] = named_args.get('dest_name')
+        if not kwargs['destination_name']:
+            await update.message.reply_text("Ошибка: для депозита укажите `dest_name:ИМЯ_СЧЕТА`.", parse_mode=ParseMode.HTML)
+            return
+    elif move_type == 'WITHDRAWAL':
+        kwargs['source_name'] = named_args.get('source_name')
+        if not kwargs['source_name']:
+            await update.message.reply_text("Ошибка: для снятия укажите `source_name:ИМЯ_СЧЕТА`.", parse_mode=ParseMode.HTML)
+            return
+    elif move_type == 'TRANSFER':
+        kwargs['source_name'] = pos_args[2]
+        kwargs['destination_name'] = pos_args[3]
+
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+    # Мы явно получаем timestamp и amount, чтобы передать их в функцию
+    timestamp_obj = utils.parse_datetime_from_args(
+        named_args, config.TZ_OFFSET_HOURS)
+
+    kwargs['fee_amount'] = utils.parse_decimal(named_args.get('fee'))
+    kwargs['fee_asset'] = named_args.get('fee_asset')
+    kwargs['notes'] = named_args.get('notes')
+    kwargs['transaction_id_blockchain'] = named_args.get('tx_id')
+
+    success, message = log_fund_movement(
+        movement_type=move_type,
+        asset=asset,
+        amount=amount_dec,      # Явно передаем amount
+        timestamp=timestamp_obj,  # Явно передаем timestamp
+        **kwargs
+    )
+
+    if success:
+        await update.message.reply_text(f"✅ Операция {move_type.lower()} на сумму {amount_dec} {asset} залогирована. ID: <code>{message}</code>", parse_mode=ParseMode.HTML)
+    else:
+        await update.message.reply_text(f"❌ {message}", parse_mode=ParseMode.HTML)
 
 
 @admin_only
