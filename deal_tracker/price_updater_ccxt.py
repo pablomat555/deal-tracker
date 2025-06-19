@@ -114,11 +114,8 @@ async def update_prices_and_pnl():
     finally:
         # 6. Обновляем статус с помощью новой, безопасной функции
         timestamp = datetime.datetime.now(datetime.timezone.utc).astimezone(
-            datetime.timedelta(hours=config.TZ_OFFSET_HOURS)
+            datetime.timezone(datetime.timedelta(hours=config.TZ_OFFSET_HOURS))
         )
-        status = "OK" if update_successful else "ERROR"
-        sheets_service.update_system_status(status, timestamp)
-        logger.info(f"Цикл обновления цен завершен. Статус: {status}")
 
 
 async def main_loop():
