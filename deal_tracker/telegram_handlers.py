@@ -1,4 +1,5 @@
 # deal_tracker/telegram_handlers.py
+from telegram_parser import parse_command_args_advanced
 import logging
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
