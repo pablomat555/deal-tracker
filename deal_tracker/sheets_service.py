@@ -9,7 +9,7 @@ from dateutil.parser import parse as parse_datetime
 from oauth2client.service_account import ServiceAccountCredentials
 
 import config
-from models import TradeData, MovementData, PositionData, BalanceData, FifoLogData
+from models import TradeData, MovementData, PositionData, BalanceData, FifoLogData, AnalyticsData
 
 logger = logging.getLogger(__name__)
 
