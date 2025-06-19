@@ -472,3 +472,62 @@ def batch_update_trades_fifo_fields(updates: List[Dict[str, Any]]) -> bool:
 
 def add_analytics_record(analytics_data: AnalyticsData) -> bool:
     return append_record(config.ANALYTICS_SHEET_NAME, analytics_data)
+
+
+def batch_update_positions(positions: List[PositionData]) -> bool:
+    """Пакетно обновляет данные по списку открытых позиций (цены и PnL)."""
+    if not positions:
+        return True
+    sheet_name = config.OPEN_POSITIONS_SHEET_NAME
+    sheet = _get_sheet_by_name(sheet_name)
+    if not sheet:
+        return False
+
+    headers = _get_headers(sheet_name)
+    if not headers:
+        return False
+
+    payload = []
+    for pos in positions:
+        if pos.row_number:
+            row_values = _model_to_row(pos, headers)
+            # Обновляем всю строку, чтобы сохранить консистентность
+            range_str = f'A{pos.row_number}:{chr(ord("A")+len(headers)-1)}{pos.row_number}'
+            payload.append({'range': range_str, 'values': [row_values]})
+
+    if not payload:
+        return True
+
+    try:
+        sheet.batch_update(payload, value_input_option='USER_ENTERED')
+        logger.info(
+            f"Пакетно обновлены данные для {len(payload)} открытых позиций.")
+        return True
+    except Exception as e:
+        logger.error(
+            f"Ошибка пакетного обновления открытых позиций: {e}", exc_info=True)
+        return False
+
+
+def update_system_status(status: str, timestamp: datetime) -> bool:
+    """Обновляет ячейки статуса в листе System_Status."""
+    sheet_name = config.SYSTEM_STATUS_SHEET_NAME
+    sheet = _get_sheet_by_name(sheet_name)
+    if not sheet:
+        return False
+
+    try:
+        # Обновляем две ячейки за один вызов, если они рядом (для эффективности)
+        # или по отдельности, если они в разных местах
+        payload = [
+            {'range': config.UPDATER_LAST_RUN_CELL,
+                'values': [[_format_datetime(timestamp)]]},
+            {'range': config.UPDATER_STATUS_CELL, 'values': [[status]]}
+        ]
+        sheet.batch_update(payload, value_input_option='USER_ENTERED')
+        logger.info(
+            f"Статус системы обновлен: {status} в {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка обновления статуса системы: {e}", exc_info=True)
+        return False
