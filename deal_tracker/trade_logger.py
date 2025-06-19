@@ -69,7 +69,19 @@ def log_trade(
     base_asset, quote_asset = symbol.upper().split('/')
     exchange_lower = exchange.lower()
 
-    # 1. Создание объекта сделки
+    # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+    # Расчет PNL для продаж ДО создания объекта сделки
+    calculated_pnl = None
+    if trade_type.upper() == 'SELL':
+        all_positions = sheets_service.get_all_open_positions()
+        existing_pos = _find_position(symbol, exchange_lower, all_positions)
+        if existing_pos and existing_pos.avg_entry_price is not None:
+            calculated_pnl = (price - existing_pos.avg_entry_price) * amount
+            logger.info(
+                f"Для продажи {symbol} рассчитан предварительный PNL: {calculated_pnl}")
+    # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
+    # 1. Создание объекта сделки с учетом рассчитанного PNL
     trade = TradeData(
         trade_id=trade_id,
         timestamp=timestamp,
@@ -79,6 +91,7 @@ def log_trade(
         amount=amount,
         price=price,
         total_quote_amount=(amount * price),
+        trade_pnl=calculated_pnl,  # <--- PNL теперь добавляется сюда
         notes=kwargs.get('notes'),
         commission=kwargs.get('commission'),
         commission_asset=kwargs.get('commission_asset'),
@@ -90,18 +103,15 @@ def log_trade(
     balance_changes: List[Dict[str, Any]] = []
 
     if trade.trade_type == 'BUY':
-        required_quote = trade.total_quote_amount
+        required_quote = trade.total_quote_amount or Decimal(0)
         if trade.commission and trade.commission_asset and trade.commission_asset.upper() == quote_asset:
             required_quote += trade.commission
-
         if not _has_sufficient_balance(exchange_lower, quote_asset, required_quote, all_balances):
             return False, f"Недостаточно {quote_asset} на счете {exchange}."
-
         balance_changes.append(
             {'account': exchange_lower, 'asset': quote_asset, 'change': -required_quote})
         balance_changes.append(
             {'account': exchange_lower, 'asset': base_asset, 'change': trade.amount})
-
         if trade.commission and trade.commission_asset and trade.commission_asset.upper() != quote_asset:
             if not _has_sufficient_balance(exchange_lower, trade.commission_asset, trade.commission, all_balances):
                 return False, f"Недостаточно {trade.commission_asset} для комиссии."
@@ -109,14 +119,14 @@ def log_trade(
                 {'account': exchange_lower, 'asset': trade.commission_asset, 'change': -trade.commission})
 
     elif trade.trade_type == 'SELL':
+        # Проверяем баланс базового актива
         if not _has_sufficient_balance(exchange_lower, base_asset, trade.amount, all_balances):
             return False, f"Недостаточно {base_asset} на счете {exchange}."
-
         balance_changes.append(
             {'account': exchange_lower, 'asset': base_asset, 'change': -trade.amount})
-        balance_changes.append(
-            {'account': exchange_lower, 'asset': quote_asset, 'change': trade.total_quote_amount})
-        # Обработка комиссии при продаже (если она взимается отдельно) будет здесь
+        balance_changes.append({'account': exchange_lower, 'asset': quote_asset,
+                               'change': trade.total_quote_amount or Decimal(0)})
+        # Логика для комиссии при продаже, если она взимается отдельно, должна быть здесь
 
     # 3. Запись основной транзакции
     if not sheets_service.add_trade(trade):

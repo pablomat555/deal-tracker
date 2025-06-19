@@ -73,6 +73,8 @@ async def update_prices_and_pnl():
         )
         if not open_positions:
             logger.info("Нет открытых позиций для обновления.")
+            # Важно вернуть True, т.к. ошибки не было, просто нет работы
+            update_successful = True
             return
 
         updated_positions: List[PositionData] = []
@@ -116,6 +118,11 @@ async def update_prices_and_pnl():
         timestamp = datetime.datetime.now(datetime.timezone.utc).astimezone(
             datetime.timezone(datetime.timedelta(hours=config.TZ_OFFSET_HOURS))
         )
+        status = "OK" if update_successful else "ERROR"
+
+        # --- ВОТ ЭТА СТРОКА БЫЛА ПРОПУЩЕНА ---
+        sheets_service.update_system_status(status, timestamp)
+        # ------------------------------------
 
 
 async def main_loop():
