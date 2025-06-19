@@ -18,38 +18,51 @@ T = TypeVar('T')
 _gspread_client: Optional[gspread.Client] = None
 _header_cache: Dict[str, List[str]] = {}
 
-# --- Карта сопоставления полей и названий столбцов ---
+# --- ИСПРАВЛЕННАЯ Карта сопоставления полей и названий столбцов ---
 FIELD_TO_SHEET_NAMES_MAP: Dict[str, List[str]] = {
+    # Общие поля
     'timestamp': ['Timestamp', 'Время', 'Дата', 'Время сделки', 'Время операции'],
     'symbol': ['Symbol', 'Тикер', 'Инструмент', 'Торговая Пара'],
     'exchange': ['Exchange', 'Биржа'],
-    'type': ['Type', 'Тип', 'Тип сделки', 'Тип операции', 'Направление'],
     'amount': ['Amount', 'Количество', 'Объем', 'Сумма'],
     'price': ['Price', 'Цена'],
     'notes': ['Notes', 'Заметки', 'Примечание', 'Описание'],
     'commission': ['Commission', 'Комиссия'],
     'commission_asset': ['Commission_Asset', 'Валюта комиссии', 'Fee Asset'],
+
+    # Конкретные поля 'type' для разных моделей
+    'trade_type': ['Type', 'Тип', 'Тип сделки', 'Направление'],
+    'movement_type': ['Type', 'Тип', 'Тип операции'],
+
+    # TradeData
     'trade_id': ['Trade_ID', 'ID Сделки'], 'order_id': ['Order_ID', 'ID ордера'],
     'total_quote_amount': ['Total_Quote_Amount', 'Объем в валюте котировки'], 'trade_pnl': ['Trade_PNL', 'PNL по сделке'],
     'fifo_consumed_qty': ['Fifo_Consumed_Qty', 'FIFO Потреблено'], 'fifo_sell_processed': ['Fifo_Sell_Processed', 'FIFO Продажа Обработана'],
+
+    # MovementData
     'movement_id': ['Movement_ID', 'ID Движения'], 'asset': ['Asset', 'Актив', 'Валюта'],
     'source_name': ['Source_Name', 'Источник'], 'destination_name': ['Destination_Name', 'Назначение'],
     'fee_amount': ['Fee_Amount', 'Сумма комиссии'], 'fee_asset': ['Fee_Asset', 'Валюта комиссии'],
     'transaction_id_blockchain': ['Transaction_ID_Blockchain', 'TX ID'],
+
+    # PositionData
     'net_amount': ['Net_Amount', 'Amount', 'Количество', 'Объем', 'Кол-во'],
     'avg_entry_price': ['Avg_Entry_Price', 'Avg Price', 'Средняя цена входа'],
     'current_price': ['Current_Price', 'Текущая цена'], 'unrealized_pnl': ['Unrealized_PNL', 'Unreal PNL', 'Нереализованный PNL'],
     'last_updated': ['Last_Updated', 'Последнее обновление'],
+
+    # BalanceData
     'account_name': ['Account_Name', 'Счет'], 'balance': ['Balance', 'Баланс'], 'entity_type': ['Entity_Type', 'Тип счета'],
+
+    # FifoLogData
     'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'], 'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'],
     'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'], 'buy_price': ['Buy_Price', 'Цена Покупки'],
     'sell_price': ['Sell_Price', 'Цена Продажи'], 'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
     'timestamp_closed': ['Timestamp_Closed', 'Время Закрытия'], 'buy_timestamp': ['Buy_Timestamp', 'Время Покупки'],
 }
 
+
 # --- Приватные вспомогательные функции ---
-
-
 def _parse_decimal(value: Any) -> Optional[Decimal]:
     if value is None or value == '':
         return None
@@ -150,6 +163,11 @@ def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T]
     if 'row_number' in model_fields:
         kwargs['row_number'] = -1
     try:
+        # Проверка на наличие обязательных полей перед созданием объекта
+        for req_field in getattr(model_cls, '__required_fields__', []):
+            if req_field not in kwargs or kwargs[req_field] is None:
+                raise TypeError(
+                    f"missing required positional argument: '{req_field}'")
         return model_cls(**kwargs)
     except TypeError as e:
         logger.error(
@@ -163,6 +181,7 @@ def _model_to_row(record: Any, headers: List[str]) -> List[str]:
     for header in headers:
         formatted_value = ""
         field_name_found = None
+        # Ищем соответствующее поле модели для заголовка
         for f_name, possible_names in FIELD_TO_SHEET_NAMES_MAP.items():
             if header.lower() in [p.lower() for p in possible_names]:
                 field_name_found = f_name
@@ -381,7 +400,10 @@ def batch_update_balances(changes: List[Dict[str, Any]]) -> bool:
         key = (account, asset)
         if key in balances_map:
             balance_obj = balances_map[key]
-            balance_obj.balance += change_amount
+            if balance_obj.balance is not None:
+                balance_obj.balance += change_amount
+            else:
+                balance_obj.balance = change_amount
             balance_obj.last_updated = datetime.now()
             balances_to_update.append(balance_obj)
         else:

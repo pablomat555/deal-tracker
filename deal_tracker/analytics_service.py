@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 
 def _calculate_pnl_metrics(fifo_logs: List[FifoLogData], open_positions: List[PositionData]) -> Tuple[Decimal, Decimal, Decimal]:
     """Рассчитывает PNL, работая с типизированными моделями."""
-    total_realized = sum(log.fifo_pnl for log in fifo_logs if log.fifo_pnl)
+    total_realized = sum(
+        (log.fifo_pnl for log in fifo_logs if log.fifo_pnl), Decimal('0'))
     total_unrealized = sum(
-        pos.unrealized_pnl for pos in open_positions if pos.unrealized_pnl)
+        (pos.unrealized_pnl for pos in open_positions if pos.unrealized_pnl), Decimal('0'))
     net_total = total_realized + total_unrealized
     return total_realized, total_unrealized, net_total
 
