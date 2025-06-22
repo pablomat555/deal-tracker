@@ -1,6 +1,7 @@
 # deal_tracker/telegram_handlers.py
 import logging
 from decimal import Decimal
+from typing import List  # Добавлено для тайп-хинтинга
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
@@ -13,6 +14,28 @@ from trade_logger import log_trade, log_fund_movement
 from telegram_parser import parse_command_args_advanced
 
 logger = logging.getLogger(__name__)
+
+
+# УЛУЧШЕНИЕ: Добавлена функция для склейки суммы, введенной через пробел
+def merge_amount_parts(args: List[str]) -> List[str]:
+    """
+    Объединяет части суммы, разделенные пробелом.
+    Например, ['USDT', '12', '000,50'] -> ['USDT', '12 000,50'].
+    Это позволяет парсеру чисел корректно обработать сумму.
+    """
+    merged_args = []
+    skip_next = False
+    for i in range(len(args)):
+        if skip_next:
+            skip_next = False
+            continue
+        # Условие: текущий элемент - число, а следующий содержит запятую
+        if i + 1 < len(args) and args[i].isdigit() and ',' in args[i+1]:
+            merged_args.append(f"{args[i]} {args[i+1]}")
+            skip_next = True
+        else:
+            merged_args.append(args[i])
+    return merged_args
 
 
 def admin_only(func):
@@ -62,6 +85,9 @@ async def help_command(update: Update, context: CallbackContext) -> None:
 async def trade_command(update: Update, context: CallbackContext, trade_type: str) -> None:
     """Общий обработчик для команд /buy и /sell."""
     command_name = update.message.text.split(' ')[0].lower()
+
+    # В командах /buy и /sell сумма обычно не бывает такой большой,
+    # поэтому здесь склейка не применяется, но можно добавить при необходимости.
     pos_args, named_args = parse_command_args_advanced(list(context.args), 3)
 
     if len(pos_args) < 3:
@@ -107,7 +133,11 @@ async def movement_command(update: Update, context: CallbackContext, move_type: 
     logger.info(
         f"[HANDLER] Получена команда /{move_type.lower()} с аргументами: {context.args}")
 
-    pos_args, named_args = parse_command_args_advanced(list(context.args), 4)
+    # УЛУЧШЕНИЕ: Вызов функции для склейки суммы перед парсингом
+    processed_args = merge_amount_parts(list(context.args))
+    logger.info(f"[HANDLER] Аргументы после обработки: {processed_args}")
+
+    pos_args, named_args = parse_command_args_advanced(processed_args, 4)
     min_args = 2 if move_type != 'TRANSFER' else 3
     if len(pos_args) < min_args:
         await update.message.reply_text("Ошибка: недостаточно аргументов.", parse_mode=ParseMode.HTML)
