@@ -387,51 +387,83 @@ def batch_update_positions(positions: List[PositionData]) -> bool:
 
 
 def batch_update_balances(changes: List[Dict[str, Any]]) -> bool:
+    """Пакетно обновляет балансы на основе списка изменений с детальным логированием."""
     sheet_name = config.ACCOUNT_BALANCES_SHEET_NAME
+    logger.info(
+        f"[SHEETS_BALANCE] Запущено обновление балансов для {len(changes)} изменений.")
+
     sheet = _get_sheet_by_name(sheet_name)
     if not sheet:
+        logger.error(
+            f"[SHEETS_BALANCE] Не удалось получить лист {sheet_name}.")
         return False
+
     current_balances = get_all_balances()
+    logger.info(
+        f"[SHEETS_BALANCE] Загружено {len(current_balances)} существующих балансов.")
+
     balances_map: Dict[tuple[str, str], BalanceData] = {
         (b.account_name.lower(), b.asset.upper()): b for b in current_balances}
     balances_to_update: List[BalanceData] = []
     balances_to_add: List[BalanceData] = []
+
     for change in changes:
         account, asset, change_amount = change['account'].lower(
         ), change['asset'].upper(), change['change']
         key = (account, asset)
+
         if key in balances_map:
             balance_obj = balances_map[key]
-            if balance_obj.balance is not None:
-                balance_obj.balance += change_amount
-            else:
-                balance_obj.balance = change_amount
+            if balance_obj.balance is None:
+                balance_obj.balance = Decimal('0')  # Инициализация если None
+            balance_obj.balance += change_amount
             balance_obj.last_updated = datetime.now()
-            balances_to_update.append(balance_obj)
+            if balance_obj not in balances_to_update:
+                balances_to_update.append(balance_obj)
+            logger.info(
+                f"[SHEETS_BALANCE] Подготовлено обновление для {key}: новый баланс {balance_obj.balance}")
         else:
             new_balance = BalanceData(
-                account_name=account, asset=asset, balance=change_amount, last_updated=datetime.now())
+                account_name=account, asset=asset, balance=change_amount, last_updated=datetime.now()
+            )
             balances_to_add.append(new_balance)
+            # Добавляем в карту для последующих изменений в этом же батче
             balances_map[key] = new_balance
+            logger.info(
+                f"[SHEETS_BALANCE] Подготовлено добавление для {key}: баланс {new_balance.balance}")
+
     try:
         headers = _get_headers(sheet_name)
+        if not headers:
+            logger.error(
+                f"[SHEETS_BALANCE] Не найдены заголовки в {sheet_name}.")
+            return False
+
         if balances_to_update:
             payload = []
             for b in balances_to_update:
                 if b.row_number:
                     payload.append(
                         {'range': f'A{b.row_number}:{chr(ord("A")+len(headers)-1)}{b.row_number}', 'values': [_model_to_row(b, headers)]})
+            logger.info(
+                f"[SHEETS_BALANCE] Пакет на ОБНОВЛЕНИЕ содержит {len(payload)} элементов.")
             if payload:
                 sheet.batch_update(payload, value_input_option='USER_ENTERED')
+
         if balances_to_add:
             rows_to_append = [_model_to_row(b, headers)
                               for b in balances_to_add]
-            sheet.append_rows(
-                rows_to_append, value_input_option='USER_ENTERED')
+            logger.info(
+                f"[SHEETS_BALANCE] Пакет на ДОБАВЛЕНИЕ содержит {len(rows_to_append)} строк.")
+            if rows_to_append:
+                sheet.append_rows(
+                    rows_to_append, value_input_option='USER_ENTERED')
+
+        logger.info("[SHEETS_BALANCE] Обновление балансов успешно завершено.")
         return True
     except Exception as e:
-        logger.error(
-            f"Ошибка при пакетном обновлении балансов: {e}", exc_info=True)
+        logger.critical(
+            f"[SHEETS_BALANCE] Критическая ошибка при записи в Google Sheets: {e}", exc_info=True)
         return False
 
 
