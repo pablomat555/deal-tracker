@@ -70,7 +70,9 @@ def _parse_decimal(value: Any) -> Optional[Decimal]:
     if value is None or value == '':
         return None
     try:
-        return Decimal(str(value).replace(',', '.').strip())
+        value_str = str(value).replace('\xa0', '').replace(
+            ' ', '').replace(',', '.').strip()
+        return Decimal(value_str)
     except (InvalidOperation, TypeError):
         return None
 
