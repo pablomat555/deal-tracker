@@ -1,20 +1,26 @@
 # pages/4_Ручной_Ввод.py
-from locales import t
-import utils
-from trade_logger import log_trade, log_fund_movement
-import config
-import streamlit as st
-import logging
-import time
-from decimal import Decimal
-from datetime import datetime, time as dt_time  # Импортируем time для виджета
-import os
-import sys
 
-# Добавляем корень проекта в путь
+# --- НАЧАЛО УНИВЕРСАЛЬНОГО БЛОКА ---
+from deal_tracker.locales import t
+from deal_tracker import config
+from deal_tracker.trade_logger import log_trade, log_fund_movement
+from deal_tracker import utils
+from datetime import datetime, time as dt_time
+from decimal import Decimal
+import time
+import logging
+import streamlit as st
+import sys
+import os
+
+# 1. Добавляем корневую папку проекта в системный путь
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+
+# 2. Теперь импорты делаем явными, от имени главного пакета
+# Явные импорты из пакета deal_tracker
+# --- КОНЕЦ УНИВЕРСАЛЬНОГО БЛОКА ---
 
 
 # --- НАСТРОЙКИ И ФОРМЫ ---
@@ -27,7 +33,7 @@ def display_manual_trade_entry_form():
     st.subheader("📈 Добавить сделку")
     with st.form(key="manual_trade_form", clear_on_submit=True):
 
-        # --- ВОССОЗДАН БЛОК ДЛЯ ВВОДА ДАННЫХ ---
+        # --- БЛОК ДЛЯ ВВОДА ДАННЫХ ---
         col1, col2 = st.columns(2)
         with col1:
             trade_type = st.radio(

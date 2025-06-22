@@ -1,31 +1,30 @@
 # deal_tracker/dashboard.py
 
-# Этот блок кода должен быть в самом верху каждого .py файла дэшборда
+# --- НАЧАЛО УНИВЕРСАЛЬНОГО БЛОКА ---
+from deal_tracker.locales import t
+from deal_tracker import config
+from deal_tracker import dashboard_utils
 import logging
 import streamlit as st
-import dashboard_utils
-import config
-from locales import t
 import sys
 import os
 
-# Добавляем корневую папку проекта в системный путь
-# Это нужно, чтобы Python мог найти наши модули (utils, config, sheets_service и т.д.)
+# 1. Добавляем корневую папку проекта в системный путь
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# --- Теперь могут идти остальные импорты ---
+# 2. Теперь импорты делаем явными, от имени главного пакета
+# Используем явные импорты от пакета deal_tracker
+# --- КОНЕЦ УНИВЕРСАЛЬНОГО БЛОКА ---
 
-# ИСПРАВЛЕНО: Правильные импорты из новых утилит
 
 # --- НАСТРОЙКА СТРАНИЦЫ И ЛОГГЕР ---
 st.set_page_config(layout="wide", page_title=t('app_title'))
 logger = logging.getLogger(__name__)
 
+
 # --- ФУНКЦИЯ ОТОБРАЖЕНИЯ ---
-
-
 def display_capital_overview(latest_analytics):
     if not latest_analytics:
         st.info(t('no_data_for_analytics'))
@@ -34,7 +33,6 @@ def display_capital_overview(latest_analytics):
     st.markdown(f"### {t('capital_overview_header')}")
     col1, col2, col3 = st.columns(3)
 
-    # ИСПРАВЛЕНО: Прямой доступ к атрибутам модели
     col1.metric(t('total_equity'), dashboard_utils.format_number(
         latest_analytics.total_equity, currency_symbol=config.BASE_CURRENCY))
     col2.metric(t('net_invested'), dashboard_utils.format_number(
