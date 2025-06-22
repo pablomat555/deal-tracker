@@ -1,7 +1,7 @@
 # deal_tracker/telegram_handlers.py
 import logging
 from decimal import Decimal, InvalidOperation  # Добавлен InvalidOperation
-from typing import List
+from typing import List, Optional
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
