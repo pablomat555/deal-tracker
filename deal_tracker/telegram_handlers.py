@@ -1,7 +1,8 @@
 # deal_tracker/telegram_handlers.py
 import logging
-from decimal import Decimal, InvalidOperation  # Добавлен InvalidOperation
+from decimal import Decimal, InvalidOperation
 from typing import List, Optional
+from datetime import datetime  # <-- Добавлен импорт
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
@@ -12,6 +13,7 @@ import sheets_service
 import analytics_service
 from trade_logger import log_trade, log_fund_movement
 from telegram_parser import parse_command_args_advanced
+from models import AnalyticsData  # <-- Добавлен импорт
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +110,6 @@ async def trade_command(update: Update, context: CallbackContext, trade_type: st
         return
 
     symbol = pos_args[0]
-    # ИСПРАВЛЕНО: Используем новую, надежную функцию для всех сумм
     amount_dec = normalize_amount_string(pos_args[1])
     price_dec = normalize_amount_string(pos_args[2])
     exchange = named_args.get('exch')
@@ -157,7 +158,6 @@ async def movement_command(update: Update, context: CallbackContext, move_type: 
         return
 
     asset = pos_args[0]
-    # ИСПРАВЛЕНО: Используем новую, надежную функцию
     amount_dec = normalize_amount_string(pos_args[1])
     if not amount_dec or amount_dec <= Decimal('0'):
         await update.message.reply_text("Ошибка: некорректная сумма.", parse_mode=ParseMode.HTML)
@@ -179,7 +179,6 @@ async def movement_command(update: Update, context: CallbackContext, move_type: 
         kwargs['destination_name'] = pos_args[3]
 
     timestamp_obj = utils.parse_datetime_from_args(named_args)
-    # ИСПРАВЛЕНО: Используем новую, надежную функцию для комиссии
     kwargs['fee_amount'] = normalize_amount_string(named_args.get('fee'))
     kwargs['fee_asset'] = named_args.get('fee_asset')
     kwargs['notes'] = named_args.get('notes')
@@ -283,3 +282,40 @@ async def update_analytics_command(update: Update, context: CallbackContext) -> 
         await update.message.reply_text(f"✅ Обновление аналитики завершено!\n{message}", parse_mode=ParseMode.HTML)
     else:
         await update.message.reply_text(f"❌ Ошибка обновления аналитики:\n{message}", parse_mode=ParseMode.HTML)
+
+# ТЕСТОВАЯ ФУНКЦИЯ ДЛЯ ДИАГНОСТИКИ
+
+
+@admin_only
+async def test_write_command(update: Update, context: CallbackContext) -> None:
+    """Тестовая команда для прямой записи в лист 'Analytics'."""
+    await update.message.reply_text("▶️ Начинаю тестовую запись в лист 'Analytics'...")
+    logger.info("[DIAGNOSTIC] Запущена команда /testwrite")
+
+    try:
+        # Создаем простой объект с тестовыми данными
+        test_data = AnalyticsData(
+            date_generated=datetime.now(),
+            total_realized_pnl=Decimal('123.45'),
+            total_unrealized_pnl=Decimal('-50.10'),
+            net_total_pnl=Decimal('73.35')
+            # Остальные поля могут быть None или 0, в зависимости от вашей модели
+        )
+
+        success = sheets_service.add_analytics_record(test_data)
+
+        if success:
+            response = "✅ Тестовая запись УСПЕШНА. Проверьте таблицу!"
+            logger.info("[DIAGNOSTIC] Тестовая запись прошла успешно.")
+        else:
+            response = "❌ Ошибка записи. Проблема с доступом или конфигурацией."
+            logger.error(
+                "[DIAGNOSTIC] Тестовая запись НЕ удалась. sheets_service.add_analytics_record вернул False.")
+
+        await update.message.reply_text(response)
+
+    except Exception as e:
+        error_message = f"❌ КРИТИЧЕСКАЯ ОШИБКА во время теста: {e}"
+        logger.critical(
+            f"[DIAGNOSTIC] Неперехваченное исключение в /testwrite: {e}", exc_info=True)
+        await update.message.reply_text(error_message)
