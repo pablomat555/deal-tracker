@@ -1,6 +1,7 @@
 # deal_tracker/sheets_service.py
 import gspread
 import logging
+import time
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from typing import TypeVar, Type, Optional, List, Dict, Any, get_type_hints
@@ -13,14 +14,15 @@ from models import TradeData, MovementData, PositionData, BalanceData, FifoLogDa
 
 logger = logging.getLogger(__name__)
 
-# --- Определение Generic Type и кэшей ---
+# --- КЭШИРОВАНИЕ ---
 T = TypeVar('T')
 _gspread_client: Optional[gspread.Client] = None
 _header_cache: Dict[str, List[str]] = {}
+_data_cache: Dict[str, tuple[List[Any], float]] = {}
+CACHE_DURATION_SECONDS = 5  # Время жизни кэша - 5 секунд
 
-# --- ИСПРАВЛЕННАЯ Карта сопоставления полей и названий столбцов ---
+# --- Карта сопоставления полей и названий столбцов ---
 FIELD_TO_SHEET_NAMES_MAP: Dict[str, List[str]] = {
-    # Общие поля
     'timestamp': ['Timestamp', 'Время', 'Дата', 'Время сделки', 'Время операции'],
     'symbol': ['Symbol', 'Тикер', 'Инструмент', 'Торговая Пара'],
     'exchange': ['Exchange', 'Биржа'],
@@ -29,32 +31,20 @@ FIELD_TO_SHEET_NAMES_MAP: Dict[str, List[str]] = {
     'notes': ['Notes', 'Заметки', 'Примечание', 'Описание'],
     'commission': ['Commission', 'Комиссия'],
     'commission_asset': ['Commission_Asset', 'Валюта комиссии', 'Fee Asset'],
-
-    # Конкретные поля 'type' для разных моделей
     'trade_type': ['Type', 'Тип', 'Тип сделки', 'Направление'],
     'movement_type': ['Type', 'Тип', 'Тип операции'],
-
-    # TradeData
     'trade_id': ['Trade_ID', 'ID Сделки'], 'order_id': ['Order_ID', 'ID ордера'],
     'total_quote_amount': ['Total_Quote_Amount', 'Объем в валюте котировки'], 'trade_pnl': ['Trade_PNL', 'PNL по сделке'],
     'fifo_consumed_qty': ['Fifo_Consumed_Qty', 'FIFO Потреблено'], 'fifo_sell_processed': ['Fifo_Sell_Processed', 'FIFO Продажа Обработана'],
-
-    # MovementData
     'movement_id': ['Movement_ID', 'ID Движения'], 'asset': ['Asset', 'Актив', 'Валюта'],
     'source_name': ['Source_Name', 'Источник'], 'destination_name': ['Destination_Name', 'Назначение'],
     'fee_amount': ['Fee_Amount', 'Сумма комиссии'], 'fee_asset': ['Fee_Asset', 'Валюта комиссии'],
     'transaction_id_blockchain': ['Transaction_ID_Blockchain', 'TX ID'],
-
-    # PositionData
     'net_amount': ['Net_Amount', 'Amount', 'Количество', 'Объем', 'Кол-во'],
     'avg_entry_price': ['Avg_Entry_Price', 'Avg Price', 'Средняя цена входа'],
     'current_price': ['Current_Price', 'Текущая цена'], 'unrealized_pnl': ['Unrealized_PNL', 'Unreal PNL', 'Нереализованный PNL'],
     'last_updated': ['Last_Updated', 'Последнее обновление'],
-
-    # BalanceData
     'account_name': ['Account_Name', 'Счет'], 'balance': ['Balance', 'Баланс'], 'entity_type': ['Entity_Type', 'Тип счета'],
-
-    # FifoLogData
     'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'], 'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'],
     'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'], 'buy_price': ['Buy_Price', 'Цена Покупки'],
     'sell_price': ['Sell_Price', 'Цена Продажи'], 'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
@@ -62,7 +52,20 @@ FIELD_TO_SHEET_NAMES_MAP: Dict[str, List[str]] = {
 }
 
 
+def invalidate_cache(sheet_name: Optional[str] = None):
+    """Очищает кэш для указанного листа или весь кэш, если имя не указано."""
+    global _data_cache
+    if sheet_name:
+        if sheet_name in _data_cache:
+            del _data_cache[sheet_name]
+            logger.info(f"[CACHE] Кэш для листа '{sheet_name}' очищен.")
+    else:
+        _data_cache = {}
+        logger.info("[CACHE] Весь кэш данных очищен.")
+
+
 # --- Приватные вспомогательные функции ---
+
 def _parse_decimal(value: Any) -> Optional[Decimal]:
     if value is None or value == '':
         return None
@@ -127,6 +130,7 @@ def _get_headers(sheet_name: str) -> List[str]:
 
 
 def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T]) -> Optional[T]:
+    """Строит объект модели из строки данных, с парсингом и проверкой типов."""
     model_fields = get_type_hints(model_cls)
     kwargs = {}
     headers_lower = [h.lower() for h in headers]
@@ -158,16 +162,21 @@ def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T]
             else:
                 kwargs[field_name] = str(
                     raw_value) if raw_value is not None else None
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             kwargs[field_name] = None
+
     if 'row_number' in model_fields:
         kwargs['row_number'] = -1
+
     try:
-        # Проверка на наличие обязательных полей перед созданием объекта
-        for req_field in getattr(model_cls, '__required_fields__', []):
+        # УЛУЧШЕНИЕ: Возвращена проверка на обязательные поля для надежности
+        required_fields = getattr(model_cls, '__required_fields__', [])
+        for req_field in required_fields:
             if req_field not in kwargs or kwargs[req_field] is None:
-                raise TypeError(
-                    f"missing required positional argument: '{req_field}'")
+                # Не создаем объект, если отсутствует обязательное поле
+                logger.warning(
+                    f"Пропуск строки при создании {model_cls.__name__}: отсутствует обязательное поле '{req_field}'. Данные: {kwargs}")
+                return None
         return model_cls(**kwargs)
     except TypeError as e:
         logger.error(
@@ -176,12 +185,12 @@ def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T]
 
 
 def _model_to_row(record: Any, headers: List[str]) -> List[str]:
+    """Преобразует объект модели в список для записи в таблицу."""
     row_to_append = []
     record_dict = record.__dict__
     for header in headers:
         formatted_value = ""
         field_name_found = None
-        # Ищем соответствующее поле модели для заголовка
         for f_name, possible_names in FIELD_TO_SHEET_NAMES_MAP.items():
             if header.lower() in [p.lower() for p in possible_names]:
                 field_name_found = f_name
@@ -199,17 +208,29 @@ def _model_to_row(record: Any, headers: List[str]) -> List[str]:
         row_to_append.append(formatted_value)
     return row_to_append
 
-# --- Универсальные функции для работы с записями ---
 
+# --- Универсальные функции для работы с записями (с кэшем) ---
 
 def get_all_records(sheet_name: str, model_cls: Type[T]) -> List[T]:
+    """Универсальная функция для получения записей с листа, ИСПОЛЬЗУЕТ КЭШ."""
+    now = time.time()
+    if sheet_name in _data_cache:
+        cached_data, timestamp = _data_cache[sheet_name]
+        if now - timestamp < CACHE_DURATION_SECONDS:
+            logger.info(
+                f"[CACHE] Возврат кэшированных данных для '{sheet_name}'.")
+            return cached_data
+
+    logger.info(
+        f"[API_CALL] Кэш для '{sheet_name}' пуст или устарел. Запрос к Google API...")
     sheet = _get_sheet_by_name(sheet_name)
     if not sheet:
         return []
-    headers = _get_headers(sheet_name)
-    if not headers:
-        return []
+
     try:
+        headers = _get_headers(sheet_name)
+        if not headers:
+            return []
         all_values = sheet.get_all_values()[1:]
         records = []
         for i, row_values in enumerate(all_values):
@@ -221,6 +242,8 @@ def get_all_records(sheet_name: str, model_cls: Type[T]) -> List[T]:
                 if hasattr(model_instance, 'row_number'):
                     model_instance.row_number = i + 2
                 records.append(model_instance)
+
+        _data_cache[sheet_name] = (records, now)  # Сохраняем в кэш
         return records
     except Exception as e:
         logger.error(
@@ -229,15 +252,15 @@ def get_all_records(sheet_name: str, model_cls: Type[T]) -> List[T]:
 
 
 def append_record(sheet_name: str, record: Any) -> bool:
-    headers = _get_headers(sheet_name)
-    if not headers:
-        return False
-    row_to_append = _model_to_row(record, headers)
+    """Добавляет одну запись в конец листа и очищает кэш."""
     try:
         sheet = _get_sheet_by_name(sheet_name)
         if not sheet:
             return False
+        headers = _get_headers(sheet_name)
+        row_to_append = _model_to_row(record, headers)
         sheet.append_row(row_to_append, value_input_option='USER_ENTERED')
+        invalidate_cache(sheet_name)  # Очистка кэша после изменения
         return True
     except Exception as e:
         logger.error(
@@ -246,19 +269,21 @@ def append_record(sheet_name: str, record: Any) -> bool:
 
 
 def delete_row(sheet_name: str, row_number: int) -> bool:
+    """Удаляет строку по номеру и очищает кэш."""
     try:
         sheet = _get_sheet_by_name(sheet_name)
         if not sheet:
             return False
         sheet.delete_rows(row_number)
+        invalidate_cache(sheet_name)  # Очистка кэша после изменения
         return True
     except Exception as e:
         logger.error(
             f"Ошибка удаления строки {row_number} из '{sheet_name}': {e}", exc_info=True)
         return False
 
-# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ЧТЕНИЕ ДАННЫХ (GET) ---
 
+# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ЧТЕНИЕ ДАННЫХ (GET) ---
 
 def get_all_core_trades() -> List[TradeData]:
     return get_all_records(config.CORE_TRADES_SHEET_NAME, TradeData)
@@ -280,7 +305,8 @@ def get_all_fifo_logs() -> List[FifoLogData]:
     return get_all_records(config.FIFO_LOG_SHEET_NAME, FifoLogData)
 
 
-def get_system_status() -> tuple[str | None, str | None]:
+def get_system_status() -> tuple[Optional[str], Optional[str]]:
+    """УЛУЧШЕНИЕ: Правильное чтение статуса из конкретных ячеек, минуя кэш записей."""
     sheet_name = config.SYSTEM_STATUS_SHEET_NAME
     sheet = _get_sheet_by_name(sheet_name)
     if not sheet:
@@ -288,25 +314,23 @@ def get_system_status() -> tuple[str | None, str | None]:
     try:
         ranges = [config.UPDATER_LAST_RUN_CELL, config.UPDATER_STATUS_CELL]
         results = sheet.batch_get(ranges)
-        timestamp_str = results[0]['values'][0][0] if results[0].get(
-            'values') else None
-        status_str = results[1]['values'][0][0] if results[1].get(
-            'values') else None
+        timestamp_str = results[0]['values'][0][0] if results and len(
+            results) > 0 and results[0].get('values') else None
+        status_str = results[1]['values'][0][0] if results and len(
+            results) > 1 and results[1].get('values') else None
         return status_str, timestamp_str
     except Exception as e:
         logger.error(f"Ошибка чтения статуса системы: {e}")
         return None, None
 
-# --- ПУБЛИЧЫЕ ФУНКЦИИ: ДОБАВЛЕНИЕ ДАННЫХ (ADD) ---
 
+# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ДОБАВЛЕНИЕ ДАННЫХ (ADD) ---
 
 def add_trade(trade_data: TradeData) -> bool:
     return append_record(config.CORE_TRADES_SHEET_NAME, trade_data)
 
 
 def add_movement(movement_data: MovementData) -> bool:
-    logger.info(
-        f"[SHEETS] Попытка добавления записи в лист {config.FUND_MOVEMENTS_SHEET_NAME}")
     return append_record(config.FUND_MOVEMENTS_SHEET_NAME, movement_data)
 
 
@@ -322,36 +346,37 @@ def batch_append_fifo_logs(fifo_logs: List[FifoLogData]) -> bool:
     if not fifo_logs:
         return True
     sheet_name = config.FIFO_LOG_SHEET_NAME
-    sheet = _get_sheet_by_name(sheet_name)
-    if not sheet:
-        return False
-    headers = _get_headers(sheet_name)
-    if not headers:
-        return False
     try:
+        sheet = _get_sheet_by_name(sheet_name)
+        if not sheet:
+            return False
+        headers = _get_headers(sheet_name)
         rows_to_append = [_model_to_row(log, headers) for log in fifo_logs]
         sheet.append_rows(rows_to_append, value_input_option='USER_ENTERED')
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.error(
             f"Ошибка пакетного добавления в '{sheet_name}': {e}", exc_info=True)
         return False
 
-# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ОБНОВЛЕНИЕ ДАННЫХ (UPDATE) ---
 
+# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ОБНОВЛЕНИЕ ДАННЫХ (UPDATE) ---
 
 def update_position(position: PositionData) -> bool:
     if position.row_number is None:
         return False
+    sheet_name = config.OPEN_POSITIONS_SHEET_NAME
     try:
-        sheet = _get_sheet_by_name(config.OPEN_POSITIONS_SHEET_NAME)
+        sheet = _get_sheet_by_name(sheet_name)
         if not sheet:
             return False
-        headers = _get_headers(config.OPEN_POSITIONS_SHEET_NAME)
+        headers = _get_headers(sheet_name)
         row_values = _model_to_row(position, headers)
-        update_payload = [
-            {'range': f'A{position.row_number}:{chr(ord("A")+len(headers)-1)}{position.row_number}', 'values': [row_values]}]
+        range_str = f'A{position.row_number}:{chr(ord("A") + len(headers) - 1)}{position.row_number}'
+        update_payload = [{'range': range_str, 'values': [row_values]}]
         sheet.batch_update(update_payload, value_input_option='USER_ENTERED')
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.error(
@@ -363,22 +388,21 @@ def batch_update_positions(positions: List[PositionData]) -> bool:
     if not positions:
         return True
     sheet_name = config.OPEN_POSITIONS_SHEET_NAME
-    sheet = _get_sheet_by_name(sheet_name)
-    if not sheet:
-        return False
-    headers = _get_headers(sheet_name)
-    if not headers:
-        return False
-    payload = []
-    for pos in positions:
-        if pos.row_number:
-            row_values = _model_to_row(pos, headers)
-            range_str = f'A{pos.row_number}:{chr(ord("A")+len(headers)-1)}{pos.row_number}'
-            payload.append({'range': range_str, 'values': [row_values]})
-    if not payload:
-        return True
     try:
+        sheet = _get_sheet_by_name(sheet_name)
+        if not sheet:
+            return False
+        headers = _get_headers(sheet_name)
+        payload = []
+        for pos in positions:
+            if pos.row_number:
+                row_values = _model_to_row(pos, headers)
+                range_str = f'A{pos.row_number}:{chr(ord("A") + len(headers) - 1)}{pos.row_number}'
+                payload.append({'range': range_str, 'values': [row_values]})
+        if not payload:
+            return True
         sheet.batch_update(payload, value_input_option='USER_ENTERED')
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.error(
@@ -387,21 +411,14 @@ def batch_update_positions(positions: List[PositionData]) -> bool:
 
 
 def batch_update_balances(changes: List[Dict[str, Any]]) -> bool:
-    """Пакетно обновляет балансы на основе списка изменений с детальным логированием."""
     sheet_name = config.ACCOUNT_BALANCES_SHEET_NAME
     logger.info(
         f"[SHEETS_BALANCE] Запущено обновление балансов для {len(changes)} изменений.")
-
     sheet = _get_sheet_by_name(sheet_name)
     if not sheet:
-        logger.error(
-            f"[SHEETS_BALANCE] Не удалось получить лист {sheet_name}.")
         return False
 
-    current_balances = get_all_balances()
-    logger.info(
-        f"[SHEETS_BALANCE] Загружено {len(current_balances)} существующих балансов.")
-
+    current_balances = get_all_balances()  # Использует кэш
     balances_map: Dict[tuple[str, str], BalanceData] = {
         (b.account_name.lower(), b.asset.upper()): b for b in current_balances}
     balances_to_update: List[BalanceData] = []
@@ -411,55 +428,43 @@ def batch_update_balances(changes: List[Dict[str, Any]]) -> bool:
         account, asset, change_amount = change['account'].lower(
         ), change['asset'].upper(), change['change']
         key = (account, asset)
-
         if key in balances_map:
             balance_obj = balances_map[key]
             if balance_obj.balance is None:
-                balance_obj.balance = Decimal('0')  # Инициализация если None
+                balance_obj.balance = Decimal('0')
             balance_obj.balance += change_amount
             balance_obj.last_updated = datetime.now()
             if balance_obj not in balances_to_update:
                 balances_to_update.append(balance_obj)
-            logger.info(
-                f"[SHEETS_BALANCE] Подготовлено обновление для {key}: новый баланс {balance_obj.balance}")
         else:
             new_balance = BalanceData(
-                account_name=account, asset=asset, balance=change_amount, last_updated=datetime.now()
-            )
+                account_name=account, asset=asset, balance=change_amount, last_updated=datetime.now())
             balances_to_add.append(new_balance)
-            # Добавляем в карту для последующих изменений в этом же батче
             balances_map[key] = new_balance
-            logger.info(
-                f"[SHEETS_BALANCE] Подготовлено добавление для {key}: баланс {new_balance.balance}")
 
     try:
         headers = _get_headers(sheet_name)
         if not headers:
-            logger.error(
-                f"[SHEETS_BALANCE] Не найдены заголовки в {sheet_name}.")
             return False
 
         if balances_to_update:
             payload = []
             for b in balances_to_update:
                 if b.row_number:
-                    payload.append(
-                        {'range': f'A{b.row_number}:{chr(ord("A")+len(headers)-1)}{b.row_number}', 'values': [_model_to_row(b, headers)]})
-            logger.info(
-                f"[SHEETS_BALANCE] Пакет на ОБНОВЛЕНИЕ содержит {len(payload)} элементов.")
+                    range_str = f'A{b.row_number}:{chr(ord("A") + len(headers) - 1)}{b.row_number}'
+                    payload.append({'range': range_str, 'values': [
+                                   _model_to_row(b, headers)]})
             if payload:
                 sheet.batch_update(payload, value_input_option='USER_ENTERED')
 
         if balances_to_add:
             rows_to_append = [_model_to_row(b, headers)
                               for b in balances_to_add]
-            logger.info(
-                f"[SHEETS_BALANCE] Пакет на ДОБАВЛЕНИЕ содержит {len(rows_to_append)} строк.")
             if rows_to_append:
                 sheet.append_rows(
                     rows_to_append, value_input_option='USER_ENTERED')
 
-        logger.info("[SHEETS_BALANCE] Обновление балансов успешно завершено.")
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.critical(
@@ -471,33 +476,32 @@ def batch_update_trades_fifo_fields(updates: List[Dict[str, Any]]) -> bool:
     if not updates:
         return True
     sheet_name = config.CORE_TRADES_SHEET_NAME
-    sheet = _get_sheet_by_name(sheet_name)
-    if not sheet:
-        return False
-    headers, headers_lower = _get_headers(
-        sheet_name), [h.lower() for h in _get_headers(sheet_name)]
     try:
-        consumed_qty_col, processed_col = headers_lower.index(
-            'fifoconsumedqty') + 1, headers_lower.index('fifosellprocessed') + 1
-    except ValueError:
-        return False
-    payload = []
-    for update in updates:
-        row_num = update.get('row_number')
-        if not row_num:
-            continue
-        if 'fifo_consumed_qty' in update:
-            range_str = gspread.utils.rowcol_to_a1(row_num, consumed_qty_col)
-            payload.append({'range': range_str, 'values': [
-                           [_format_decimal(update['fifo_consumed_qty'])]]})
-        if 'fifo_sell_processed' in update:
-            range_str = gspread.utils.rowcol_to_a1(row_num, processed_col)
-            payload.append({'range': range_str, 'values': [
-                           [_format_bool(update['fifo_sell_processed'])]]})
-    if not payload:
-        return True
-    try:
+        sheet = _get_sheet_by_name(sheet_name)
+        if not sheet:
+            return False
+        headers, headers_lower = _get_headers(
+            sheet_name), [h.lower() for h in _get_headers(sheet_name)]
+        consumed_qty_col = headers_lower.index('fifoconsumedqty') + 1
+        processed_col = headers_lower.index('fifosellprocessed') + 1
+        payload = []
+        for update in updates:
+            row_num = update.get('row_number')
+            if not row_num:
+                continue
+            if 'fifo_consumed_qty' in update:
+                range_str = gspread.utils.rowcol_to_a1(
+                    row_num, consumed_qty_col)
+                payload.append({'range': range_str, 'values': [
+                               [_format_decimal(update['fifo_consumed_qty'])]]})
+            if 'fifo_sell_processed' in update:
+                range_str = gspread.utils.rowcol_to_a1(row_num, processed_col)
+                payload.append({'range': range_str, 'values': [
+                               [_format_bool(update['fifo_sell_processed'])]]})
+        if not payload:
+            return True
         sheet.batch_update(payload, value_input_option='USER_ENTERED')
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.error(
@@ -507,16 +511,17 @@ def batch_update_trades_fifo_fields(updates: List[Dict[str, Any]]) -> bool:
 
 def update_system_status(status: str, timestamp: datetime) -> bool:
     sheet_name = config.SYSTEM_STATUS_SHEET_NAME
-    sheet = _get_sheet_by_name(sheet_name)
-    if not sheet:
-        return False
     try:
+        sheet = _get_sheet_by_name(sheet_name)
+        if not sheet:
+            return False
         payload = [
             {'range': config.UPDATER_LAST_RUN_CELL,
                 'values': [[_format_datetime(timestamp)]]},
             {'range': config.UPDATER_STATUS_CELL, 'values': [[status]]}
         ]
         sheet.batch_update(payload, value_input_option='USER_ENTERED')
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.error(f"Ошибка обновления статуса системы: {e}", exc_info=True)
