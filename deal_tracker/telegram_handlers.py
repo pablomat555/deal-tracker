@@ -1,7 +1,7 @@
 # deal_tracker/telegram_handlers.py
 import logging
-from decimal import Decimal
-from typing import List  # Добавлено для тайп-хинтинга
+from decimal import Decimal, InvalidOperation  # Добавлен InvalidOperation
+from typing import List
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
@@ -16,12 +16,10 @@ from telegram_parser import parse_command_args_advanced
 logger = logging.getLogger(__name__)
 
 
-# УЛУЧШЕНИЕ: Добавлена функция для склейки суммы, введенной через пробел
 def merge_amount_parts(args: List[str]) -> List[str]:
     """
     Объединяет части суммы, разделенные пробелом.
     Например, ['USDT', '12', '000,50'] -> ['USDT', '12 000,50'].
-    Это позволяет парсеру чисел корректно обработать сумму.
     """
     merged_args = []
     skip_next = False
@@ -29,13 +27,29 @@ def merge_amount_parts(args: List[str]) -> List[str]:
         if skip_next:
             skip_next = False
             continue
-        # Условие: текущий элемент - число, а следующий содержит запятую
         if i + 1 < len(args) and args[i].isdigit() and ',' in args[i+1]:
             merged_args.append(f"{args[i]} {args[i+1]}")
             skip_next = True
         else:
             merged_args.append(args[i])
     return merged_args
+
+
+def normalize_amount_string(amount_str: str) -> Optional[Decimal]:
+    """
+    Преобразует строку вида '12 000,50' или '10.000,99' в Decimal,
+    удаляя пробелы и заменяя запятую на точку.
+    """
+    if not amount_str:
+        return None
+    try:
+        # Удаляем пробелы, заменяем запятую на точку для унификации
+        cleaned = amount_str.replace(' ', '').replace(',', '.')
+        return Decimal(cleaned)
+    except (InvalidOperation, TypeError):
+        logger.warning(
+            f"Не удалось преобразовать строку '{amount_str}' в Decimal.")
+        return None
 
 
 def admin_only(func):
@@ -86,17 +100,17 @@ async def trade_command(update: Update, context: CallbackContext, trade_type: st
     """Общий обработчик для команд /buy и /sell."""
     command_name = update.message.text.split(' ')[0].lower()
 
-    # В командах /buy и /sell сумма обычно не бывает такой большой,
-    # поэтому здесь склейка не применяется, но можно добавить при необходимости.
-    pos_args, named_args = parse_command_args_advanced(list(context.args), 3)
+    processed_args = merge_amount_parts(list(context.args))
+    pos_args, named_args = parse_command_args_advanced(processed_args, 3)
 
     if len(pos_args) < 3:
         await update.message.reply_text(f"Ошибка: <code>{command_name} SYMBOL QTY PRICE exch:NAME [ключи...]</code>", parse_mode=ParseMode.HTML)
         return
 
     symbol = pos_args[0]
-    amount_dec = utils.parse_decimal(pos_args[1])
-    price_dec = utils.parse_decimal(pos_args[2])
+    # ИСПРАВЛЕНО: Используем новую, надежную функцию для всех сумм
+    amount_dec = normalize_amount_string(pos_args[1])
+    price_dec = normalize_amount_string(pos_args[2])
     exchange = named_args.get('exch')
 
     if not all([amount_dec, price_dec, exchange]):
@@ -106,7 +120,7 @@ async def trade_command(update: Update, context: CallbackContext, trade_type: st
     timestamp = utils.parse_datetime_from_args(named_args)
     kwargs = {
         'notes': named_args.get('notes'), 'order_id': named_args.get('id'),
-        'commission': utils.parse_decimal(named_args.get('fee')),
+        'commission': normalize_amount_string(named_args.get('fee')),
         'commission_asset': named_args.get('fee_asset')
     }
     success, message = log_trade(
@@ -133,7 +147,6 @@ async def movement_command(update: Update, context: CallbackContext, move_type: 
     logger.info(
         f"[HANDLER] Получена команда /{move_type.lower()} с аргументами: {context.args}")
 
-    # УЛУЧШЕНИЕ: Вызов функции для склейки суммы перед парсингом
     processed_args = merge_amount_parts(list(context.args))
     logger.info(f"[HANDLER] Аргументы после обработки: {processed_args}")
 
@@ -144,7 +157,8 @@ async def movement_command(update: Update, context: CallbackContext, move_type: 
         return
 
     asset = pos_args[0]
-    amount_dec = utils.parse_decimal(pos_args[1])
+    # ИСПРАВЛЕНО: Используем новую, надежную функцию
+    amount_dec = normalize_amount_string(pos_args[1])
     if not amount_dec or amount_dec <= Decimal('0'):
         await update.message.reply_text("Ошибка: некорректная сумма.", parse_mode=ParseMode.HTML)
         return
@@ -165,7 +179,8 @@ async def movement_command(update: Update, context: CallbackContext, move_type: 
         kwargs['destination_name'] = pos_args[3]
 
     timestamp_obj = utils.parse_datetime_from_args(named_args)
-    kwargs['fee_amount'] = utils.parse_decimal(named_args.get('fee'))
+    # ИСПРАВЛЕНО: Используем новую, надежную функцию для комиссии
+    kwargs['fee_amount'] = normalize_amount_string(named_args.get('fee'))
     kwargs['fee_asset'] = named_args.get('fee_asset')
     kwargs['notes'] = named_args.get('notes')
     kwargs['transaction_id_blockchain'] = named_args.get('tx_id')
