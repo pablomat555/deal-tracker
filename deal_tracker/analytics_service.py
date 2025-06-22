@@ -15,8 +15,14 @@ def _calculate_pnl_metrics(fifo_logs: List[FifoLogData], open_positions: List[Po
     """Рассчитывает PNL, работая с типизированными моделями."""
     total_realized = sum(
         (log.fifo_pnl for log in fifo_logs if log.fifo_pnl), Decimal('0'))
+
+    # ИСПРАВЛЕНО: Добавлена проверка типа и преобразование для unrealized_pnl
     total_unrealized = sum(
-        (pos.unrealized_pnl for pos in open_positions if pos.unrealized_pnl), Decimal('0'))
+        Decimal(pos.unrealized_pnl) if not isinstance(
+            pos.unrealized_pnl, Decimal) else pos.unrealized_pnl
+        for pos in open_positions if pos.unrealized_pnl is not None
+    )
+
     net_total = total_realized + total_unrealized
     return total_realized, total_unrealized, net_total
 
