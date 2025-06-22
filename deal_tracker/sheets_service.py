@@ -310,13 +310,8 @@ def append_record(sheet_name: str, record: Any) -> bool:
             return False
         headers = _get_headers(sheet_name)
         row_to_append = _model_to_row(record, headers)
-
-        # ДОБАВЛЕНА ДИАГНОСТИКА: Логируем то, что отправляем в Google
-        logger.info(
-            f"[DIAGNOSTIC_WRITE] Попытка записи в лист '{sheet_name}'. Данные: {row_to_append}")
-
         sheet.append_row(row_to_append, value_input_option='USER_ENTERED')
-        invalidate_cache(sheet_name)  # Очистка кэша после изменения
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.error(
@@ -468,7 +463,7 @@ def batch_update_balances(changes: List[Dict[str, Any]]) -> bool:
     if not sheet:
         return False
 
-    current_balances = get_all_balances()
+    current_balances = get_all_records()
     balances_map: Dict[tuple[str, str], BalanceData] = {
         (b.account_name.lower(), b.asset.upper()): b for b in current_balances}
     balances_to_update: List[BalanceData] = []
