@@ -104,6 +104,9 @@ async def sell_command(update: Update, context: CallbackContext) -> None:
 @admin_only
 async def movement_command(update: Update, context: CallbackContext, move_type: str) -> None:
     """Общий обработчик для /deposit, /withdraw, /transfer."""
+    logger.info(
+        f"[HANDLER] Получена команда /{move_type.lower()} с аргументами: {context.args}")
+
     pos_args, named_args = parse_command_args_advanced(list(context.args), 4)
     min_args = 2 if move_type != 'TRANSFER' else 3
     if len(pos_args) < min_args:
@@ -137,9 +140,11 @@ async def movement_command(update: Update, context: CallbackContext, move_type: 
     kwargs['notes'] = named_args.get('notes')
     kwargs['transaction_id_blockchain'] = named_args.get('tx_id')
 
+    logger.info(f"[HANDLER] Данные подготовлены. Вызываю log_fund_movement...")
     success, message = log_fund_movement(
         movement_type=move_type, asset=asset, amount=amount_dec, timestamp=timestamp_obj, **kwargs
     )
+
     if success:
         await update.message.reply_text(f"✅ Операция {move_type.lower()} на {amount_dec} {asset} залогирована.", parse_mode=ParseMode.HTML)
     else:

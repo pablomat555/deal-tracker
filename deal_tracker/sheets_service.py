@@ -297,7 +297,7 @@ def get_system_status() -> tuple[str | None, str | None]:
         logger.error(f"Ошибка чтения статуса системы: {e}")
         return None, None
 
-# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ДОБАВЛЕНИЕ ДАННЫХ (ADD) ---
+# --- ПУБЛИЧЫЕ ФУНКЦИИ: ДОБАВЛЕНИЕ ДАННЫХ (ADD) ---
 
 
 def add_trade(trade_data: TradeData) -> bool:
@@ -305,6 +305,8 @@ def add_trade(trade_data: TradeData) -> bool:
 
 
 def add_movement(movement_data: MovementData) -> bool:
+    logger.info(
+        f"[SHEETS] Попытка добавления записи в лист {config.FUND_MOVEMENTS_SHEET_NAME}")
     return append_record(config.FUND_MOVEMENTS_SHEET_NAME, movement_data)
 
 

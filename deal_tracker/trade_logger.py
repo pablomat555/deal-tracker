@@ -217,36 +217,31 @@ def log_fund_movement(
 ) -> Tuple[bool, str]:
     """Логирует движение средств (депозит, снятие, перевод)."""
     movement_id = str(uuid.uuid4())
-    log_context = f"MoveID: {movement_id}, {movement_type} {amount} {asset}"
-    logger.info(f"Начало логирования движения средств. {log_context}")
+    logger.info(
+        f"[LOGGER] Начало логирования движения средств. MoveID: {movement_id}")
 
     source_name = kwargs.get('source_name')
     destination_name = kwargs.get('destination_name')
 
     movement = MovementData(
-        movement_id=movement_id,
-        timestamp=timestamp,
-        movement_type=movement_type.upper(),
-        asset=asset.upper(),
-        amount=amount,
+        movement_id=movement_id, timestamp=timestamp, movement_type=movement_type.upper(),
+        asset=asset.upper(), amount=amount,
         source_name=source_name.lower() if source_name else None,
         destination_name=destination_name.lower() if destination_name else None,
-        fee_amount=kwargs.get('fee_amount'),
-        fee_asset=kwargs.get('fee_asset'),
-        notes=kwargs.get('notes'),
-        transaction_id_blockchain=kwargs.get('transaction_id_blockchain')
+        fee_amount=kwargs.get('fee_amount'), fee_asset=kwargs.get('fee_asset'),
+        notes=kwargs.get('notes'), transaction_id_blockchain=kwargs.get('transaction_id_blockchain')
     )
 
-    # Проверка баланса для снятия или перевода
     if movement.movement_type in ['WITHDRAWAL', 'TRANSFER'] and movement.source_name:
         all_balances = sheets_service.get_all_balances()
         if not _has_sufficient_balance(movement.source_name, movement.asset, movement.amount, all_balances):
             return False, f"Недостаточно {movement.asset} на счете {movement.source_name}."
 
+    logger.info(
+        f"[LOGGER] Обращаюсь к sheets_service для добавления движения...")
     if not sheets_service.add_movement(movement):
         return False, "Ошибка записи движения средств."
 
-    # Обновление балансов
     balance_changes = []
     if movement.source_name:
         balance_changes.append({'account': movement.source_name,
@@ -256,10 +251,13 @@ def log_fund_movement(
                                'asset': movement.asset, 'change': movement.amount})
 
     if balance_changes:
+        logger.info(
+            f"[LOGGER] Обращаюсь к sheets_service для обновления балансов...")
         if not sheets_service.batch_update_balances(balance_changes):
             logger.critical(
                 f"ТРЕБУЕТСЯ РУЧНОЕ ВМЕШАТЕЛЬСТВО! Движение {movement_id} записано, но балансы НЕ обновлены!")
             return False, "Критическая ошибка: балансы не обновлены после записи движения."
 
-    logger.info(f"Движение средств успешно залогировано. {log_context}")
+    logger.info(
+        f"[LOGGER] Движение средств {movement_id} успешно залогировано.")
     return True, movement_id
