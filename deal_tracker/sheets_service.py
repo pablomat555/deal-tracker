@@ -36,7 +36,6 @@ FIELD_TO_SHEET_NAMES_MAP: Dict[str, List[str]] = {
     'movement_type': ['Type', 'Тип', 'Тип операции'],
     'trade_id': ['Trade_ID', 'ID Сделки'], 'order_id': ['Order_ID', 'ID ордера'],
     'total_quote_amount': ['Total_Quote_Amount', 'Объем в валюте котировки'], 'trade_pnl': ['Trade_PNL', 'PNL по сделке'],
-    # УЛУЧШЕНИЕ: Добавлены синонимы для большей надежности поиска
     'fifo_consumed_qty': ['Fifo_Consumed_Qty', 'FIFO Потреблено', 'fifoconsumedqty'],
     'fifo_sell_processed': ['Fifo_Sell_Processed', 'FIFO Продажа Обработана', 'fifosellprocessed'],
     'movement_id': ['Movement_ID', 'ID Движения'], 'asset': ['Asset', 'Актив', 'Валюта'],
@@ -138,7 +137,6 @@ def _get_headers(sheet_name: str) -> List[str]:
     return _header_cache[sheet_name]
 
 
-# УЛУЧШЕНИЕ: Новая централизованная функция поиска индекса колонки
 def _find_column_index(headers: list, field_key: str) -> int:
     """
     Универсальный поиск индекса колонки по логическому имени поля.
@@ -262,14 +260,20 @@ def get_all_records(sheet_name: str, model_cls: Type[T]) -> List[T]:
 
 
 def append_record(sheet_name: str, record: Any) -> bool:
+    """Добавляет одну запись в конец листа и очищает кэш."""
     try:
         sheet = _get_sheet_by_name(sheet_name)
         if not sheet:
             return False
         headers = _get_headers(sheet_name)
         row_to_append = _model_to_row(record, headers)
+
+        # ДОБАВЛЕНА ДИАГНОСТИКА: Логируем то, что отправляем в Google
+        logger.info(
+            f"[DIAGNOSTIC_WRITE] Попытка записи в лист '{sheet_name}'. Данные: {row_to_append}")
+
         sheet.append_row(row_to_append, value_input_option='USER_ENTERED')
-        invalidate_cache(sheet_name)
+        invalidate_cache(sheet_name)  # Очистка кэша после изменения
         return True
     except Exception as e:
         logger.error(
@@ -486,7 +490,6 @@ def batch_update_trades_fifo_fields(updates: List[Dict[str, Any]]) -> bool:
 
         headers = _get_headers(sheet_name)
 
-        # УЛУЧШЕНИЕ: Замена на вызов новой функции
         consumed_qty_col = _find_column_index(headers, 'fifo_consumed_qty') + 1
         processed_col = _find_column_index(headers, 'fifo_sell_processed') + 1
 
