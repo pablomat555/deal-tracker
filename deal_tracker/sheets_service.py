@@ -2,7 +2,7 @@
 import gspread
 import logging
 import time
-import re  # <-- Добавлен необходимый импорт
+import re
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from typing import TypeVar, Type, Optional, List, Dict, Any, get_type_hints
@@ -20,7 +20,7 @@ T = TypeVar('T')
 _gspread_client: Optional[gspread.Client] = None
 _header_cache: Dict[str, List[str]] = {}
 _data_cache: Dict[str, tuple[List[Any], float]] = {}
-CACHE_DURATION_SECONDS = 5  # Время жизни кэша - 5 секунд
+CACHE_DURATION_SECONDS = 5
 
 # --- Карта сопоставления полей и названий столбцов ---
 FIELD_TO_SHEET_NAMES_MAP: Dict[str, List[str]] = {
@@ -36,7 +36,9 @@ FIELD_TO_SHEET_NAMES_MAP: Dict[str, List[str]] = {
     'movement_type': ['Type', 'Тип', 'Тип операции'],
     'trade_id': ['Trade_ID', 'ID Сделки'], 'order_id': ['Order_ID', 'ID ордера'],
     'total_quote_amount': ['Total_Quote_Amount', 'Объем в валюте котировки'], 'trade_pnl': ['Trade_PNL', 'PNL по сделке'],
-    'fifo_consumed_qty': ['Fifo_Consumed_Qty', 'FIFO Потреблено'], 'fifo_sell_processed': ['Fifo_Sell_Processed', 'FIFO Продажа Обработана'],
+    # УЛУЧШЕНИЕ: Добавлены синонимы для большей надежности поиска
+    'fifo_consumed_qty': ['Fifo_Consumed_Qty', 'FIFO Потреблено', 'fifoconsumedqty'],
+    'fifo_sell_processed': ['Fifo_Sell_Processed', 'FIFO Продажа Обработана', 'fifosellprocessed'],
     'movement_id': ['Movement_ID', 'ID Движения'], 'asset': ['Asset', 'Актив', 'Валюта'],
     'source_name': ['Source_Name', 'Источник'], 'destination_name': ['Destination_Name', 'Назначение'],
     'fee_amount': ['Fee_Amount', 'Сумма комиссии'], 'fee_asset': ['Fee_Asset', 'Валюта комиссии'],
@@ -71,10 +73,8 @@ def _parse_decimal(value: Any) -> Optional[Decimal]:
     if value is None or value == '':
         return None
     try:
-        # Удаляем всё, кроме цифр, точек и запятых
         clean_value = str(value)
         clean_value = re.sub(r'[^\d,.-]', '', clean_value)
-        # Если обе — запятая и точка, то удалим пробелы и считаем, что запятая — десятичный разделитель
         if ',' in clean_value and '.' in clean_value:
             clean_value = clean_value.replace('.', '').replace(',', '.')
         elif ',' in clean_value:
@@ -138,26 +138,35 @@ def _get_headers(sheet_name: str) -> List[str]:
     return _header_cache[sheet_name]
 
 
+# УЛУЧШЕНИЕ: Новая централизованная функция поиска индекса колонки
+def _find_column_index(headers: list, field_key: str) -> int:
+    """
+    Универсальный поиск индекса колонки по логическому имени поля.
+    Возвращает индекс, начиная с 0.
+    """
+    headers_lower = [h.strip().lower() for h in headers]
+    possible_names = FIELD_TO_SHEET_NAMES_MAP.get(
+        field_key.lower(), [field_key])
+
+    for name in possible_names:
+        try:
+            return headers_lower.index(name.lower())
+        except ValueError:
+            continue
+
+    raise ValueError(
+        f"Не найдена колонка для поля '{field_key}' в заголовках: {headers}")
+
+
 def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T]) -> Optional[T]:
-    """Строит объект модели из строки данных, с парсингом и проверкой типов."""
     model_fields = get_type_hints(model_cls)
     kwargs = {}
-    headers_lower = [h.lower() for h in headers]
     for field_name, field_type in model_fields.items():
-        possible_sheet_names = FIELD_TO_SHEET_NAMES_MAP.get(field_name, [
-                                                            field_name])
-        col_idx = -1
-        for name in possible_sheet_names:
-            try:
-                col_idx = headers_lower.index(name.lower())
-                break
-            except ValueError:
-                continue
-        if col_idx == -1:
-            continue
-        raw_value = row[col_idx] if col_idx < len(row) else None
         try:
+            col_idx = _find_column_index(headers, field_name)
+            raw_value = row[col_idx] if col_idx < len(row) else None
             origin_type = getattr(field_type, '__origin__', field_type)
+
             if origin_type is Decimal:
                 kwargs[field_name] = _parse_decimal(raw_value)
             elif origin_type is datetime:
@@ -173,18 +182,18 @@ def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T]
                     raw_value) if raw_value is not None else None
         except (ValueError, TypeError):
             kwargs[field_name] = None
+        except IndexError:
+            kwargs[field_name] = None
 
     if 'row_number' in model_fields:
         kwargs['row_number'] = -1
 
     try:
-        # УЛУЧШЕНИЕ: Возвращена проверка на обязательные поля для надежности
         required_fields = getattr(model_cls, '__required_fields__', [])
         for req_field in required_fields:
             if req_field not in kwargs or kwargs[req_field] is None:
-                # Не создаем объект, если отсутствует обязательное поле
                 logger.warning(
-                    f"Пропуск строки при создании {model_cls.__name__}: отсутствует обязательное поле '{req_field}'. Данные: {kwargs}")
+                    f"Пропуск строки при создании {model_cls.__name__}: отсутствует обязательное поле '{req_field}'.")
                 return None
         return model_cls(**kwargs)
     except TypeError as e:
@@ -194,7 +203,6 @@ def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T]
 
 
 def _model_to_row(record: Any, headers: List[str]) -> List[str]:
-    """Преобразует объект модели в список для записи в таблицу."""
     row_to_append = []
     record_dict = record.__dict__
     for header in headers:
@@ -218,17 +226,11 @@ def _model_to_row(record: Any, headers: List[str]) -> List[str]:
     return row_to_append
 
 
-# --- Универсальные функции для работы с записями (с кэшем) ---
-
 def get_all_records(sheet_name: str, model_cls: Type[T]) -> List[T]:
-    """Универсальная функция для получения записей с листа, ИСПОЛЬЗУЕТ КЭШ."""
     now = time.time()
-    if sheet_name in _data_cache:
-        cached_data, timestamp = _data_cache[sheet_name]
-        if now - timestamp < CACHE_DURATION_SECONDS:
-            logger.info(
-                f"[CACHE] Возврат кэшированных данных для '{sheet_name}'.")
-            return cached_data
+    if sheet_name in _data_cache and (now - _data_cache[sheet_name][1] < CACHE_DURATION_SECONDS):
+        logger.info(f"[CACHE] Возврат кэшированных данных для '{sheet_name}'.")
+        return _data_cache[sheet_name][0]
 
     logger.info(
         f"[API_CALL] Кэш для '{sheet_name}' пуст или устарел. Запрос к Google API...")
@@ -251,8 +253,7 @@ def get_all_records(sheet_name: str, model_cls: Type[T]) -> List[T]:
                 if hasattr(model_instance, 'row_number'):
                     model_instance.row_number = i + 2
                 records.append(model_instance)
-
-        _data_cache[sheet_name] = (records, now)  # Сохраняем в кэш
+        _data_cache[sheet_name] = (records, now)
         return records
     except Exception as e:
         logger.error(
@@ -261,7 +262,6 @@ def get_all_records(sheet_name: str, model_cls: Type[T]) -> List[T]:
 
 
 def append_record(sheet_name: str, record: Any) -> bool:
-    """Добавляет одну запись в конец листа и очищает кэш."""
     try:
         sheet = _get_sheet_by_name(sheet_name)
         if not sheet:
@@ -269,7 +269,7 @@ def append_record(sheet_name: str, record: Any) -> bool:
         headers = _get_headers(sheet_name)
         row_to_append = _model_to_row(record, headers)
         sheet.append_row(row_to_append, value_input_option='USER_ENTERED')
-        invalidate_cache(sheet_name)  # Очистка кэша после изменения
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.error(
@@ -278,13 +278,12 @@ def append_record(sheet_name: str, record: Any) -> bool:
 
 
 def delete_row(sheet_name: str, row_number: int) -> bool:
-    """Удаляет строку по номеру и очищает кэш."""
     try:
         sheet = _get_sheet_by_name(sheet_name)
         if not sheet:
             return False
         sheet.delete_rows(row_number)
-        invalidate_cache(sheet_name)  # Очистка кэша после изменения
+        invalidate_cache(sheet_name)
         return True
     except Exception as e:
         logger.error(
@@ -292,7 +291,7 @@ def delete_row(sheet_name: str, row_number: int) -> bool:
         return False
 
 
-# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ЧТЕНИЕ ДАННЫХ (GET) ---
+# --- ПУБЛИЧНЫЕ ФУНКЦИИ ---
 
 def get_all_core_trades() -> List[TradeData]:
     return get_all_records(config.CORE_TRADES_SHEET_NAME, TradeData)
@@ -315,7 +314,6 @@ def get_all_fifo_logs() -> List[FifoLogData]:
 
 
 def get_system_status() -> tuple[Optional[str], Optional[str]]:
-    """УЛУЧШЕНИЕ: Правильное чтение статуса из конкретных ячеек, минуя кэш записей."""
     sheet_name = config.SYSTEM_STATUS_SHEET_NAME
     sheet = _get_sheet_by_name(sheet_name)
     if not sheet:
@@ -332,8 +330,6 @@ def get_system_status() -> tuple[Optional[str], Optional[str]]:
         logger.error(f"Ошибка чтения статуса системы: {e}")
         return None, None
 
-
-# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ДОБАВЛЕНИЕ ДАННЫХ (ADD) ---
 
 def add_trade(trade_data: TradeData) -> bool:
     return append_record(config.CORE_TRADES_SHEET_NAME, trade_data)
@@ -369,8 +365,6 @@ def batch_append_fifo_logs(fifo_logs: List[FifoLogData]) -> bool:
             f"Ошибка пакетного добавления в '{sheet_name}': {e}", exc_info=True)
         return False
 
-
-# --- ПУБЛИЧНЫЕ ФУНКЦИИ: ОБНОВЛЕНИЕ ДАННЫХ (UPDATE) ---
 
 def update_position(position: PositionData) -> bool:
     if position.row_number is None:
@@ -427,7 +421,7 @@ def batch_update_balances(changes: List[Dict[str, Any]]) -> bool:
     if not sheet:
         return False
 
-    current_balances = get_all_balances()  # Использует кэш
+    current_balances = get_all_balances()
     balances_map: Dict[tuple[str, str], BalanceData] = {
         (b.account_name.lower(), b.asset.upper()): b for b in current_balances}
     balances_to_update: List[BalanceData] = []
@@ -489,10 +483,13 @@ def batch_update_trades_fifo_fields(updates: List[Dict[str, Any]]) -> bool:
         sheet = _get_sheet_by_name(sheet_name)
         if not sheet:
             return False
-        headers, headers_lower = _get_headers(
-            sheet_name), [h.lower() for h in _get_headers(sheet_name)]
-        consumed_qty_col = headers_lower.index('fifoconsumedqty') + 1
-        processed_col = headers_lower.index('fifosellprocessed') + 1
+
+        headers = _get_headers(sheet_name)
+
+        # УЛУЧШЕНИЕ: Замена на вызов новой функции
+        consumed_qty_col = _find_column_index(headers, 'fifo_consumed_qty') + 1
+        processed_col = _find_column_index(headers, 'fifo_sell_processed') + 1
+
         payload = []
         for update in updates:
             row_num = update.get('row_number')
@@ -507,11 +504,17 @@ def batch_update_trades_fifo_fields(updates: List[Dict[str, Any]]) -> bool:
                 range_str = gspread.utils.rowcol_to_a1(row_num, processed_col)
                 payload.append({'range': range_str, 'values': [
                                [_format_bool(update['fifo_sell_processed'])]]})
+
         if not payload:
             return True
+
         sheet.batch_update(payload, value_input_option='USER_ENTERED')
         invalidate_cache(sheet_name)
         return True
+    except ValueError as e:
+        logger.error(
+            f"Ошибка поиска колонки в batch_update_trades_fifo_fields: {e}")
+        return False
     except Exception as e:
         logger.error(
             f"Ошибка пакетного обновления FIFO полей: {e}", exc_info=True)

@@ -62,7 +62,6 @@ def log_trade(
             required_quote += kwargs['commission']
 
         balance_obj = _find_balance(exchange_lower, quote_asset, all_balances)
-        # ИСПРАВЛЕНО: Проверяем не только наличие объекта, но и что баланс не None
         if not balance_obj or balance_obj.balance is None or balance_obj.balance < required_quote:
             current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
                 '0')
@@ -70,7 +69,6 @@ def log_trade(
 
     elif trade_type.upper() == 'SELL':
         balance_obj = _find_balance(exchange_lower, base_asset, all_balances)
-        # ИСПРАВЛЕНО: Аналогичная проверка для продаж
         if not balance_obj or balance_obj.balance is None or balance_obj.balance < amount:
             current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
                 '0')
@@ -118,7 +116,6 @@ def _calculate_balance_changes(trade: TradeData, base_asset: str, quote_asset: s
                        'asset': base_asset, 'change': trade.amount})
         if trade.commission and trade.commission_asset:
             if trade.commission_asset.upper() == quote_asset:
-                # Добавляем комиссию к списанию
                 changes[0]['change'] -= trade.commission
             else:
                 changes.append(
@@ -128,7 +125,6 @@ def _calculate_balance_changes(trade: TradeData, base_asset: str, quote_asset: s
                        'asset': base_asset, 'change': -trade.amount})
         changes.append({'account': trade.exchange,
                        'asset': quote_asset, 'change': total_quote})
-        # Аналогично для комиссии при продаже
     return changes
 
 
@@ -137,12 +133,17 @@ def _sync_open_position(trade: TradeData, all_positions: List[PositionData], all
     existing_pos = _find_position(trade.symbol, trade.exchange, all_positions)
     base_asset = trade.symbol.split('/')[0]
 
-    # Вычисляем новый баланс в памяти
     current_balance_obj = _find_balance(
         trade.exchange, base_asset, all_balances)
     current_balance = current_balance_obj.balance if current_balance_obj else Decimal(
         0)
-    change = trade.amount if trade.trade_type == 'BUY' else -change
+
+    # ИСПРАВЛЕНО: Замена тернарной операции на безопасный if/else блок
+    if trade.trade_type == 'BUY':
+        change = trade.amount
+    else:
+        change = -trade.amount
+
     final_net_amount = current_balance + change
 
     zero_threshold = Decimal('1e-8')
@@ -177,10 +178,6 @@ def _sync_open_position(trade: TradeData, all_positions: List[PositionData], all
 def log_fund_movement(
     movement_type: str, asset: str, amount: Decimal, timestamp: datetime, **kwargs: Any
 ) -> Tuple[bool, str]:
-    # Эта функция делает меньше запросов, ее можно пока оставить без изменений,
-    # но в идеале ее тоже нужно переписать по тому же принципу.
-    # Для решения текущей проблемы с лимитами достаточно исправить log_trade.
-    # ... (код log_fund_movement остается прежним)
     movement_id = str(uuid.uuid4())
     logger.info(
         f"[LOGGER] Начало логирования движения средств. MoveID: {movement_id}")
