@@ -2,6 +2,7 @@
 import gspread
 import logging
 import time
+import re  # <-- Добавлен необходимый импорт
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from typing import TypeVar, Type, Optional, List, Dict, Any, get_type_hints
@@ -70,9 +71,15 @@ def _parse_decimal(value: Any) -> Optional[Decimal]:
     if value is None or value == '':
         return None
     try:
-        value_str = str(value).replace('\xa0', '').replace(
-            ' ', '').replace(',', '.').strip()
-        return Decimal(value_str)
+        # Удаляем всё, кроме цифр, точек и запятых
+        clean_value = str(value)
+        clean_value = re.sub(r'[^\d,.-]', '', clean_value)
+        # Если обе — запятая и точка, то удалим пробелы и считаем, что запятая — десятичный разделитель
+        if ',' in clean_value and '.' in clean_value:
+            clean_value = clean_value.replace('.', '').replace(',', '.')
+        elif ',' in clean_value:
+            clean_value = clean_value.replace(',', '.')
+        return Decimal(clean_value.strip())
     except (InvalidOperation, TypeError):
         return None
 
