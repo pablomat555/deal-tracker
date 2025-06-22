@@ -1,6 +1,6 @@
 # deal_tracker/analytics_service.py
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from typing import List, Tuple
 
@@ -11,15 +11,34 @@ from models import TradeData, FifoLogData, PositionData, MovementData, Analytics
 logger = logging.getLogger(__name__)
 
 
+# ИСПРАВЛЕНО: Добавлена "безопасная" функция для преобразования в Decimal
+def _safe_decimal(val):
+    """Безопасно преобразует значение в Decimal, возвращая 0 при ошибке."""
+    if val is None:
+        return Decimal(0)
+    try:
+        # Пробуем прямое преобразование, если это уже число или корректная строка
+        return Decimal(val)
+    except (InvalidOperation, TypeError, ValueError):
+        # Если не удалось, пробуем очистить строку (например, от валютных символов)
+        try:
+            # Оставляем только цифры, точку, запятую и знак минуса
+            cleaned_val = ''.join(c for c in str(val) if c in '0123456789.,-')
+            cleaned_val = cleaned_val.replace(',', '.')
+            return Decimal(cleaned_val)
+        except (InvalidOperation, TypeError, ValueError):
+            return Decimal(0)
+
+
 def _calculate_pnl_metrics(fifo_logs: List[FifoLogData], open_positions: List[PositionData]) -> Tuple[Decimal, Decimal, Decimal]:
     """Рассчитывает PNL, работая с типизированными моделями."""
     total_realized = sum(
         (log.fifo_pnl for log in fifo_logs if log.fifo_pnl), Decimal('0'))
 
-    # ИСПРАВЛЕНО: Добавлена проверка типа и преобразование для unrealized_pnl
+    # ИСПРАВЛЕНО: Используется _safe_decimal для обработки "грязных" данных
     total_unrealized = sum(
-        Decimal(pos.unrealized_pnl) if not isinstance(
-            pos.unrealized_pnl, Decimal) else pos.unrealized_pnl
+        pos.unrealized_pnl if isinstance(pos.unrealized_pnl, Decimal)
+        else _safe_decimal(pos.unrealized_pnl)
         for pos in open_positions if pos.unrealized_pnl is not None
     )
 
@@ -154,16 +173,22 @@ def calculate_and_update_analytics_sheet() -> Tuple[bool, str]:
     open_positions = sheets_service.get_all_open_positions()
     # Другие данные (движения, все сделки) можно было бы не перезагружать, но для надежности сделаем
     fund_movements = sheets_service.get_all_fund_movements()
+    all_trades = sheets_service.get_all_core_trades()  # Нужны для подсчета комиссий
 
     # Расчеты
     realized_pnl, unrealized_pnl, net_pnl = _calculate_pnl_metrics(
         fifo_logs, open_positions)
     stats = _calculate_trade_stats(fifo_logs)
 
-    # Здесь должны быть другие расчеты: commissions, net_invested и т.д.
-    # Пока что используем заглушки
-    net_invested = sum(m.amount for m in fund_movements if m.movement_type == 'DEPOSIT') - \
-        sum(m.amount for m in fund_movements if m.movement_type == 'WITHDRAWAL')
+    total_commissions = sum(_safe_decimal(t.commission)
+                            for t in all_trades if t.commission)
+
+    net_invested = sum(_safe_decimal(m.amount) for m in fund_movements if m.movement_type == 'DEPOSIT') - \
+        sum(_safe_decimal(m.amount)
+            for m in fund_movements if m.movement_type == 'WITHDRAWAL')
+
+    current_portfolio_value = sum(_safe_decimal(pos.net_amount) * _safe_decimal(pos.current_price)
+                                  for pos in open_positions if pos.net_amount and pos.current_price)
 
     # Формируем объект данных для записи
     analytics_record = AnalyticsData(
@@ -178,11 +203,10 @@ def calculate_and_update_analytics_sheet() -> Tuple[bool, str]:
         average_win_amount=stats.get('average_win_amount', Decimal(0)),
         average_loss_amount=stats.get('average_loss_amount', Decimal(0)),
         profit_factor=stats.get('profit_factor', "N/A"),
-        # Заглушки для оставшихся полей
-        expectancy=Decimal(0),
-        total_commissions_paid=Decimal(0),
+        expectancy=Decimal(0),  # Заглушка
+        total_commissions_paid=total_commissions,
         net_invested_funds=net_invested,
-        portfolio_current_value=Decimal(0),
+        portfolio_current_value=current_portfolio_value,
         total_equity=net_invested + net_pnl,
     )
 
