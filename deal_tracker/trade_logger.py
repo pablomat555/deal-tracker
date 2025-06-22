@@ -12,8 +12,13 @@ from models import TradeData, MovementData, PositionData, BalanceData
 
 logger = logging.getLogger(__name__)
 
-# Константа для безопасного сравнения Decimal из-за ошибок округления
-EPSILON = Decimal('1e-8')
+# УЛУЧШЕНИЕ: Адаптивный EPSILON для разных типов активов
+STABLECOINS = {'USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USD'}
+
+
+def get_epsilon(asset: str) -> Decimal:
+    """Возвращает разный допуск для стейблкоинов и других криптовалют."""
+    return Decimal('0.01') if asset.upper() in STABLECOINS else Decimal('1e-6')
 
 
 # --- Вспомогательные функции, работающие с МОДЕЛЯМИ ---
@@ -98,20 +103,22 @@ def log_trade(
             required_quote += kwargs['commission']
         balance_obj = _find_balance(exchange_lower, quote_asset, all_balances)
 
-        # ИСПРАВЛЕНО: Добавлена проверка с EPSILON
-        if not balance_obj or balance_obj.balance is None or (balance_obj.balance + EPSILON) < required_quote:
+        # ИСПРАВЛЕНО: Используем адаптивный EPSILON
+        epsilon = get_epsilon(quote_asset)
+        if not balance_obj or balance_obj.balance is None or (balance_obj.balance + epsilon) < required_quote:
             current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
                 '0')
-            return False, f"Недостаточно {quote_asset}. Нужно: {required_quote:.2f}, доступно: {current_bal:.2f}."
+            return False, f"Недостаточно {quote_asset}. Нужно: {required_quote:.4f}, доступно: {current_bal:.4f}."
 
     elif trade_type.upper() == 'SELL':
         balance_obj = _find_balance(exchange_lower, base_asset, all_balances)
 
-        # ИСПРАВЛЕНО: Добавлена проверка с EPSILON
-        if not balance_obj or balance_obj.balance is None or (balance_obj.balance + EPSILON) < amount:
+        # ИСПРАВЛЕНО: Используем адаптивный EPSILON
+        epsilon = get_epsilon(base_asset)
+        if not balance_obj or balance_obj.balance is None or (balance_obj.balance + epsilon) < amount:
             current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
                 '0')
-            return False, f"Недостаточно {base_asset}. Нужно: {amount}, доступно: {current_bal}."
+            return False, f"Недостаточно {base_asset}. Нужно: {amount:.4f}, доступно: {current_bal:.4f}."
 
     # Расчет PNL
     calculated_pnl = None
@@ -153,23 +160,32 @@ def _calculate_balance_changes(trade: TradeData, base_asset: str, quote_asset: s
     """Рассчитывает изменения балансов на основе сделки."""
     changes = []
     total_quote = trade.total_quote_amount or Decimal(0)
+    commission = trade.commission or Decimal(0)
 
     if trade.trade_type == 'BUY':
         changes.append({'account': trade.exchange,
                        'asset': quote_asset, 'change': -total_quote})
         changes.append({'account': trade.exchange,
                        'asset': base_asset, 'change': trade.amount})
-        if trade.commission and trade.commission_asset:
+        if commission > 0 and trade.commission_asset:
             if trade.commission_asset.upper() == quote_asset:
-                changes[0]['change'] -= trade.commission
+                changes[0]['change'] -= commission
             else:
                 changes.append(
-                    {'account': trade.exchange, 'asset': trade.commission_asset, 'change': -trade.commission})
+                    {'account': trade.exchange, 'asset': trade.commission_asset, 'change': -commission})
+
     elif trade.trade_type == 'SELL':
         changes.append({'account': trade.exchange,
                        'asset': base_asset, 'change': -trade.amount})
+        quote_change = total_quote
+        if commission > 0 and trade.commission_asset and trade.commission_asset.upper() == quote_asset:
+            quote_change -= commission
         changes.append({'account': trade.exchange,
-                       'asset': quote_asset, 'change': total_quote})
+                       'asset': quote_asset, 'change': quote_change})
+        if commission > 0 and trade.commission_asset and trade.commission_asset.upper() != quote_asset:
+            changes.append({'account': trade.exchange,
+                           'asset': trade.commission_asset, 'change': -commission})
+
     return changes
 
 
@@ -186,7 +202,8 @@ def _sync_open_position(trade: TradeData, all_positions: List[PositionData], all
     final_net_amount = current_balance_obj.balance if current_balance_obj and current_balance_obj.balance is not None else Decimal(
         '0')
 
-    zero_threshold = Decimal('1e-8')
+    # Используем эпсилон как порог закрытия позиции
+    zero_threshold = get_epsilon(base_asset)
 
     if final_net_amount <= zero_threshold:
         if existing_pos and existing_pos.row_number:
@@ -225,6 +242,7 @@ def log_fund_movement(
         f"[LOGGER] Начало логирования движения средств. MoveID: {movement_id}")
     source_name = kwargs.get('source_name')
     destination_name = kwargs.get('destination_name')
+
     movement = MovementData(
         movement_id=movement_id, timestamp=timestamp, movement_type=movement_type.upper(),
         asset=asset.upper(), amount=amount,
@@ -233,6 +251,7 @@ def log_fund_movement(
         fee_amount=kwargs.get('fee_amount'), fee_asset=kwargs.get('fee_asset'),
         notes=kwargs.get('notes'), transaction_id_blockchain=kwargs.get('transaction_id_blockchain')
     )
+
     if movement.movement_type in ['WITHDRAWAL', 'TRANSFER'] and movement.source_name:
         all_balances = sheets_service.get_all_balances()
         balance_obj = _find_balance(
@@ -240,8 +259,9 @@ def log_fund_movement(
         current_balance = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
             '0')
 
-        # ИСПРАВЛЕНО: Добавлена проверка с EPSILON
-        if (current_balance + EPSILON) < movement.amount:
+        # ИСПРАВЛЕНО: Используем адаптивный EPSILON
+        epsilon = get_epsilon(movement.asset)
+        if (current_balance + epsilon) < movement.amount:
             return False, f"Недостаточно {movement.asset} на счете {movement.source_name}."
 
     if not sheets_service.add_movement(movement):
@@ -254,6 +274,11 @@ def log_fund_movement(
     if movement.destination_name:
         balance_changes.append({'account': movement.destination_name,
                                'asset': movement.asset, 'change': movement.amount})
+
+    if kwargs.get('fee_amount') and kwargs.get('fee_asset') and movement.source_name:
+        balance_changes.append({'account': movement.source_name,
+                               'asset': kwargs['fee_asset'], 'change': -kwargs['fee_amount']})
+
     if balance_changes:
         if not sheets_service.batch_update_balances(balance_changes):
             return False, "Критическая ошибка: балансы не обновлены."
