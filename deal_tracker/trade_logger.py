@@ -38,39 +38,43 @@ def log_trade(
     trade_type: str, exchange: str, symbol: str, amount: Decimal, price: Decimal, timestamp: datetime, **kwargs: Any
 ) -> Tuple[bool, str]:
     """
-    Оркестрирует логирование сделки с минимальным количеством API-вызовов.
+    Оркестрирует логирование сделки с минимальным количеством API-вызовов и надежной проверкой баланса.
     """
     trade_id = str(uuid.uuid4())
     logger.info(
         f"[LOGGER] TradeID: {trade_id}. Начало обработки: {trade_type} {amount} {symbol}")
 
-    # ШАГ 1: ЕДИНОРАЗОВАЯ ЗАГРУЗКА ДАННЫХ
     try:
         all_balances = sheets_service.get_all_balances()
         all_positions = sheets_service.get_all_open_positions()
     except Exception as e:
         logger.error(
             f"[LOGGER] Не удалось загрузить исходные данные из Sheets: {e}")
-        return False, "Ошибка связи с Google Sheets при получении данных."
+        return False, "Ошибка связи с Google Sheets."
 
-    # ШАГ 2: ПРОВЕРКИ И РАСЧЕТЫ В ПАМЯТИ
     base_asset, quote_asset = symbol.upper().split('/')
     exchange_lower = exchange.lower()
 
-    # Проверка балансов
+    # --- НАДЕЖНАЯ ПРОВЕРКА БАЛАНСОВ ---
     if trade_type.upper() == 'BUY':
         required_quote = amount * price
         if kwargs.get('commission') and kwargs.get('commission_asset', '').upper() == quote_asset:
             required_quote += kwargs['commission']
 
         balance_obj = _find_balance(exchange_lower, quote_asset, all_balances)
-        if not balance_obj or balance_obj.balance < required_quote:
-            return False, f"Недостаточно {quote_asset} на счете {exchange}."
+        # ИСПРАВЛЕНО: Проверяем не только наличие объекта, но и что баланс не None
+        if not balance_obj or balance_obj.balance is None or balance_obj.balance < required_quote:
+            current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
+                '0')
+            return False, f"Недостаточно {quote_asset}. Нужно: {required_quote:.2f}, доступно: {current_bal:.2f}."
 
     elif trade_type.upper() == 'SELL':
         balance_obj = _find_balance(exchange_lower, base_asset, all_balances)
-        if not balance_obj or balance_obj.balance < amount:
-            return False, f"Недостаточно {base_asset} на счете {exchange}."
+        # ИСПРАВЛЕНО: Аналогичная проверка для продаж
+        if not balance_obj or balance_obj.balance is None or balance_obj.balance < amount:
+            current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
+                '0')
+            return False, f"Недостаточно {base_asset}. Нужно: {amount}, доступно: {current_bal}."
 
     # Расчет PNL для продаж
     calculated_pnl = None
@@ -79,26 +83,23 @@ def log_trade(
         if existing_pos and existing_pos.avg_entry_price:
             calculated_pnl = (price - existing_pos.avg_entry_price) * amount
 
-    # ШАГ 3: ФОРМИРОВАНИЕ ОБЪЕКТОВ И ИЗМЕНЕНИЙ
+    # Формирование и запись
     trade = TradeData(
         trade_id=trade_id, timestamp=timestamp, exchange=exchange_lower, symbol=symbol.upper(),
         trade_type=trade_type.upper(), amount=amount, price=price, total_quote_amount=(amount * price),
         trade_pnl=calculated_pnl, notes=kwargs.get('notes'), commission=kwargs.get('commission'),
         commission_asset=kwargs.get('commission_asset'), order_id=kwargs.get('order_id')
     )
-
     balance_changes = _calculate_balance_changes(
         trade, base_asset, quote_asset)
 
-    # ШАГ 4: ЗАПИСЬ В GOOGLE SHEETS
     if not sheets_service.add_trade(trade):
         return False, "Ошибка записи сделки в Core_Trades."
     if not sheets_service.batch_update_balances(balance_changes):
         logger.critical(
-            f"ТРЕБУЕТСЯ РУЧНАЯ ПРОВЕРКА! Сделка {trade_id} записана, но балансы НЕ обновлены!")
+            f"КРИТИЧЕСКАЯ ПРОВЕРКА! Сделка {trade_id} записана, но балансы НЕ обновлены!")
         return False, "Критическая ошибка: балансы не обновлены."
 
-    # ШАГ 5: СИНХРОНИЗАЦИЯ ПОЗИЦИЙ (С ПЕРЕДАЧЕЙ УЖЕ ЗАГРУЖЕННЫХ ДАННЫХ)
     _sync_open_position(trade, all_positions, all_balances)
 
     logger.info(f"[LOGGER] TradeID: {trade_id}. Сделка успешно залогирована.")
@@ -132,7 +133,7 @@ def _calculate_balance_changes(trade: TradeData, base_asset: str, quote_asset: s
 
 
 def _sync_open_position(trade: TradeData, all_positions: List[PositionData], all_balances: List[BalanceData]):
-    """ОБНОВЛЕННАЯ ВЕРСИЯ: не делает новых запросов к API, использует переданные данные."""
+    """ОБНОВЛЕННАЯ ВЕРСЯ: не делает новых запросов к API, использует переданные данные."""
     existing_pos = _find_position(trade.symbol, trade.exchange, all_positions)
     base_asset = trade.symbol.split('/')[0]
 
@@ -141,7 +142,7 @@ def _sync_open_position(trade: TradeData, all_positions: List[PositionData], all
         trade.exchange, base_asset, all_balances)
     current_balance = current_balance_obj.balance if current_balance_obj else Decimal(
         0)
-    change = trade.amount if trade.trade_type == 'BUY' else -trade.amount
+    change = trade.amount if trade.trade_type == 'BUY' else -change
     final_net_amount = current_balance + change
 
     zero_threshold = Decimal('1e-8')
