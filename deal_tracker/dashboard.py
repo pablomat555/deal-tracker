@@ -1,30 +1,19 @@
 # deal_tracker/dashboard.py
-
-# --- НАЧАЛО УНИВЕРСАЛЬНОГО БЛОКА ---
-from deal_tracker.locales import t
-from deal_tracker import config
-from deal_tracker import dashboard_utils
-import logging
 import streamlit as st
-import sys
-import os
+import logging
 
-# 1. Добавляем корневую папку проекта в системный путь
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-# 2. Теперь импорты делаем явными, от имени главного пакета
-# Используем явные импорты от пакета deal_tracker
-# --- КОНЕЦ УНИВЕРСАЛЬНОГО БЛОКА ---
-
+# Простые импорты, которые должны работать при правильном запуске
+import dashboard_utils
+import config
+from locales import t
 
 # --- НАСТРОЙКА СТРАНИЦЫ И ЛОГГЕР ---
 st.set_page_config(layout="wide", page_title=t('app_title'))
 logger = logging.getLogger(__name__)
 
-
 # --- ФУНКЦИЯ ОТОБРАЖЕНИЯ ---
+
+
 def display_capital_overview(latest_analytics):
     if not latest_analytics:
         st.info(t('no_data_for_analytics'))
@@ -47,7 +36,6 @@ def display_capital_overview(latest_analytics):
 
 # --- ОСНОВНАЯ ЧАСТЬ ---
 if st.button(t('update_button'), key="main_refresh_dashboard"):
-    # Очищаем кэш и перезапускаем страницу для обновления данных
     st.cache_data.clear()
     st.rerun()
 
