@@ -1,11 +1,17 @@
 # pages/2_Движения_Средств.py
+from locales import t
+import dashboard_utils
 import streamlit as st
 import pandas as pd
 import logging
+import os
+import sys
 
-# ИСПРАВЛЕНО: Правильные импорты
-import dashboard_utils
-from locales import t
+# Добавляем корень проекта в путь
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 
 # --- НАСТРОЙКА СТРАНИЦЫ И ЗАГРУЗКА ---
 st.set_page_config(layout="wide", page_title=t('page_movements_title'))
@@ -21,9 +27,9 @@ movements = all_data.get('fund_movements', [])
 if not movements:
     st.info(t('no_movements_data'))
 else:
+    # ИСПРАВЛЕНО: DataFrame создается напрямую из списка моделей
     df = pd.DataFrame(movements)
 
-    # Создаем форматированные колонки для отображения
     df_display = pd.DataFrame()
     df_display[t('col_date')] = df['timestamp']
     df_display[t('col_type')] = df['movement_type']
@@ -36,9 +42,7 @@ else:
 
     st.dataframe(
         df_display.sort_values(by=t('col_date'), ascending=False),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            t('col_date'): st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm:ss")
-        }
+        use_container_width=True, hide_index=True,
+        column_config={t('col_date'): st.column_config.DatetimeColumn(
+            format="YYYY-MM-DD HH:mm")}
     )

@@ -1,18 +1,21 @@
 # deal_tracker/dashboard.py
+from locales import t
+import config
+import dashboard_utils
 import streamlit as st
-import pandas as pd
 import logging
+import os
+import sys
+
+# Добавляем корень проекта в путь для корректных импортов
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '.'))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 # ИСПРАВЛЕНО: Правильные импорты из новых утилит
-import dashboard_utils
-import config
-from locales import t
 
 # --- НАСТРОЙКА СТРАНИЦЫ И ЛОГГЕР ---
 st.set_page_config(layout="wide", page_title=t('app_title'))
-st.markdown("<style>/* ... CSS ... */</style>", unsafe_allow_html=True)
-st.sidebar.radio("Язык/Language", ['ru', 'en'],
-                 format_func=lambda x: "Русский" if x == 'ru' else "English", key='lang')
 logger = logging.getLogger(__name__)
 
 # --- ФУНКЦИЯ ОТОБРАЖЕНИЯ ---
@@ -41,6 +44,7 @@ def display_capital_overview(latest_analytics):
 
 # --- ОСНОВНАЯ ЧАСТЬ ---
 if st.button(t('update_button'), key="main_refresh_dashboard"):
+    # Очищаем кэш и перезапускаем страницу для обновления данных
     st.cache_data.clear()
     st.rerun()
 
