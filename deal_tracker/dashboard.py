@@ -1,16 +1,21 @@
 # deal_tracker/dashboard.py
-from locales import t
-import config
-import dashboard_utils
-import streamlit as st
-import logging
-import os
-import sys
 
-# Добавляем корень проекта в путь для корректных импортов
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '.'))
+# Этот блок кода должен быть в самом верху каждого .py файла дэшборда
+import logging
+import streamlit as st
+import dashboard_utils
+import config
+from locales import t
+import sys
+import os
+
+# Добавляем корневую папку проекта в системный путь
+# Это нужно, чтобы Python мог найти наши модули (utils, config, sheets_service и т.д.)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
-    sys.path.append(project_root)
+    sys.path.insert(0, project_root)
+
+# --- Теперь могут идти остальные импорты ---
 
 # ИСПРАВЛЕНО: Правильные импорты из новых утилит
 

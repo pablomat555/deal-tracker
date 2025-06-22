@@ -7,14 +7,14 @@ import streamlit as st
 import logging
 import time
 from decimal import Decimal
-import datetime
+from datetime import datetime, time as dt_time  # Импортируем time для виджета
 import os
 import sys
 
 # Добавляем корень проекта в путь
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
-    sys.path.append(project_root)
+    sys.path.insert(0, project_root)
 
 
 # --- НАСТРОЙКИ И ФОРМЫ ---
@@ -23,22 +23,48 @@ st.title("📝 Ручной Ввод Данных")
 
 
 def display_manual_trade_entry_form():
+    """Отображает форму для ручного ввода сделки."""
+    st.subheader("📈 Добавить сделку")
     with st.form(key="manual_trade_form", clear_on_submit=True):
-        # ... (код вашей формы остается без изменений) ...
-        # ... (col1, col2, col3, st.text_input и т.д.) ...
+
+        # --- ВОССОЗДАН БЛОК ДЛЯ ВВОДА ДАННЫХ ---
+        col1, col2 = st.columns(2)
+        with col1:
+            trade_type = st.radio(
+                "Тип сделки", ["BUY", "SELL"], horizontal=True)
+            symbol = st.text_input("Символ (например, BTC/USDT)").upper()
+            exchange = st.selectbox("Биржа", config.KNOWN_EXCHANGES)
+        with col2:
+            amount = st.number_input(
+                "Количество", min_value=0.0, step=0.0001, format="%.8f")
+            price = st.number_input(
+                "Цена", min_value=0.0, step=0.0001, format="%.8f")
+            # Для ввода даты и времени используем два виджета
+            trade_date = st.date_input("Дата сделки", value=datetime.now())
+            trade_time = st.time_input(
+                "Время сделки", value=datetime.now().time())
+
+        notes = st.text_area("Заметки (опционально)")
+        # --- КОНЕЦ БЛОКА ВВОДА ---
+
         submitted = st.form_submit_button("Добавить сделку")
         if submitted:
+            # Проверяем, что числовые поля не пустые перед преобразованием
+            if amount <= 0 or price <= 0:
+                st.error("❌ 'Количество' и 'Цена' должны быть больше нуля.")
+                return
+
             amount_dec = Decimal(str(amount))
             price_dec = Decimal(str(price))
 
-            if not symbol or amount_dec <= 0 or price_dec <= 0:
-                st.error("❌ Поля 'Символ', 'Количество' и 'Цена' обязательны.")
+            if not symbol:
+                st.error("❌ Поле 'Символ' обязательно для заполнения.")
                 return
 
-            # ИСПРАВЛЕНО: Правильный вызов log_trade с типизированными данными
-            timestamp = utils.parse_datetime_from_args(
-                {'date': trade_date_str})
-            kwargs = {'notes': notes}  # Добавьте сюда другие опц. поля
+            # Собираем дату и время в один объект datetime
+            timestamp = datetime.combine(trade_date, trade_time)
+
+            kwargs = {'notes': notes}
 
             success, msg = log_trade(
                 trade_type=trade_type, exchange=exchange, symbol=symbol,
@@ -46,10 +72,16 @@ def display_manual_trade_entry_form():
             )
             if success:
                 st.success(f"✅ Сделка добавлена! ID: {msg}")
+                st.balloons()
             else:
                 st.error(f"❌ Ошибка: {msg}")
 
-# ... (код для форм движения средств переписывается по аналогии) ...
+
+def display_manual_movement_form():
+    """Отображает форму для ручного ввода движения средств."""
+    st.subheader("💸 Добавить движение средств")
+    # TODO: Реализовать форму для вводов/выводов/переводов по аналогии с формой для сделок
+    st.info("Форма для ввода движений средств находится в разработке.")
 
 
 # --- ГЛАВНАЯ ЧАСТЬ СТРАНИЦЫ ---
@@ -57,4 +89,5 @@ tab_trade, tab_movement = st.tabs(["📈 Сделки", "💸 Движения �
 with tab_trade:
     display_manual_trade_entry_form()
 
-# ...
+with tab_movement:
+    display_manual_movement_form()
