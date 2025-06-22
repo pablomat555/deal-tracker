@@ -2,7 +2,6 @@
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import List, Optional
-from datetime import datetime
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
@@ -13,7 +12,6 @@ import sheets_service
 import analytics_service
 from trade_logger import log_trade, log_fund_movement
 from telegram_parser import parse_command_args_advanced
-from models import AnalyticsData
 
 logger = logging.getLogger(__name__)
 
@@ -282,50 +280,3 @@ async def update_analytics_command(update: Update, context: CallbackContext) -> 
         await update.message.reply_text(f"✅ Обновление аналитики завершено!\n{message}", parse_mode=ParseMode.HTML)
     else:
         await update.message.reply_text(f"❌ Ошибка обновления аналитики:\n{message}", parse_mode=ParseMode.HTML)
-
-
-# ТЕСТОВАЯ ФУНКЦИЯ ДЛЯ ДИАГНОСТИКИ (ИСПРАВЛЕННАЯ ВЕРСИЯ)
-@admin_only
-async def test_write_command(update: Update, context: CallbackContext) -> None:
-    """Тестовая команда для прямой записи в лист 'Analytics'."""
-    await update.message.reply_text("▶️ Начинаю тестовую запись в лист 'Analytics' (v2)...")
-    logger.info("[DIAGNOSTIC] Запущена команда /testwrite (v2)")
-
-    try:
-        # ИСПРАВЛЕНО: Создаем ПОЛНЫЙ объект с тестовыми данными для всех обязательных полей
-        test_data = AnalyticsData(
-            date_generated=datetime.now(),
-            total_realized_pnl=Decimal('123.45'),
-            total_unrealized_pnl=Decimal('-50.10'),
-            net_total_pnl=Decimal('73.35'),
-            total_trades_closed=10,
-            winning_trades_closed=6,
-            losing_trades_closed=4,
-            win_rate_percent=Decimal('60.0'),
-            average_win_amount=Decimal('50.0'),
-            average_loss_amount=Decimal('-25.0'),
-            profit_factor='2.0',
-            expectancy=Decimal('20.0'),
-            total_commissions_paid=Decimal('15.50'),
-            net_invested_funds=Decimal('1000.0'),
-            portfolio_current_value=Decimal('1073.35'),
-            total_equity=Decimal('1073.35')
-        )
-
-        success = sheets_service.add_analytics_record(test_data)
-
-        if success:
-            response = "✅ Тестовая запись УСПЕШНА. Проверьте таблицу!"
-            logger.info("[DIAGNOSTIC] Тестовая запись прошла успешно.")
-        else:
-            response = "❌ Ошибка записи. Проблема с доступом или конфигурацией."
-            logger.error(
-                "[DIAGNOSTIC] Тестовая запись НЕ удалась. sheets_service.add_analytics_record вернул False.")
-
-        await update.message.reply_text(response)
-
-    except Exception as e:
-        error_message = f"❌ КРИТИЧЕСКАЯ ОШИБКА во время теста: {e}"
-        logger.critical(
-            f"[DIAGNOSTIC] Неперехваченное исключение в /testwrite: {e}", exc_info=True)
-        await update.message.reply_text(error_message)

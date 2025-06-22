@@ -16,8 +16,7 @@ from telegram_handlers import (
     history_command,
     average_command,
     updater_status_command,
-    update_analytics_command,
-    test_write_command  # <-- ДОБАВЛЕН ИМПОРТ
+    update_analytics_command
 )
 
 # Настройка логирования
@@ -69,9 +68,6 @@ def main() -> None:
         "updater_status", updater_status_command))
     application.add_handler(CommandHandler(
         "update_analytics", update_analytics_command))
-
-    # <-- ДОБАВЛЕНА ТЕСТОВАЯ КОМАНДА
-    application.add_handler(CommandHandler("testwrite", test_write_command))
 
     logger.info("Бот запущен и готов принимать команды.")
     application.run_polling()

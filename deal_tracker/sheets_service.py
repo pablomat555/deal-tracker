@@ -22,35 +22,78 @@ _header_cache: Dict[str, List[str]] = {}
 _data_cache: Dict[str, tuple[List[Any], float]] = {}
 CACHE_DURATION_SECONDS = 5
 
-# --- Карта сопоставления полей и названий столбцов ---
+# --- Карта сопоставления полей и названий столбцов (ИСПРАВЛЕННАЯ И ПОЛНАЯ) ---
 FIELD_TO_SHEET_NAMES_MAP: Dict[str, List[str]] = {
+    # --- ОБЩИЕ ПОЛЯ ---
     'timestamp': ['Timestamp', 'Время', 'Дата', 'Время сделки', 'Время операции'],
     'symbol': ['Symbol', 'Тикер', 'Инструмент', 'Торговая Пара'],
     'exchange': ['Exchange', 'Биржа'],
     'amount': ['Amount', 'Количество', 'Объем', 'Сумма'],
     'price': ['Price', 'Цена'],
     'notes': ['Notes', 'Заметки', 'Примечание', 'Описание'],
-    'commission': ['Commission', 'Комиссия'],
-    'commission_asset': ['Commission_Asset', 'Валюта комиссии', 'Fee Asset'],
+
+    # --- ТИПЫ ОПЕРАЦИЙ ---
     'trade_type': ['Type', 'Тип', 'Тип сделки', 'Направление'],
     'movement_type': ['Type', 'Тип', 'Тип операции'],
-    'trade_id': ['Trade_ID', 'ID Сделки'], 'order_id': ['Order_ID', 'ID ордера'],
-    'total_quote_amount': ['Total_Quote_Amount', 'Объем в валюте котировки'], 'trade_pnl': ['Trade_PNL', 'PNL по сделке'],
+
+    # --- ПОЛЯ СДЕЛОК (Core_Trades) ---
+    'trade_id': ['Trade_ID', 'ID Сделки'],
+    'order_id': ['Order_ID', 'ID ордера'],
+    'total_quote_amount': ['Total_Quote_Amount', 'Объем в валюте котировки'],
+    'trade_pnl': ['Trade_PNL', 'PNL по сделке'],
+    'commission': ['Commission', 'Комиссия'],
+    'commission_asset': ['Commission_Asset', 'Валюта комиссии', 'Fee Asset'],
+
+    # --- ПОЛЯ ДВИЖЕНИЙ (Fund_Movements) ---
+    'movement_id': ['Movement_ID', 'ID Движения'],
+    'asset': ['Asset', 'Актив', 'Валюта'],
+    'source_name': ['Source_Name', 'Источник'],
+    'destination_name': ['Destination_Name', 'Назначение'],
+    'fee_amount': ['Fee_Amount', 'Сумма комиссии'],
+    'fee_asset': ['Fee_Asset', 'Валюта комиссии'],
+    'transaction_id_blockchain': ['Transaction_ID_Blockchain', 'TX ID'],
+
+    # --- ПОЛЯ ПОЗИЦИЙ (Open_Positions) ---
+    'net_amount': ['Net_Amount', 'Количество', 'Объем', 'Кол-во'],
+    'avg_entry_price': ['Avg_Entry_Price', 'Avg Price', 'Средняя цена входа'],
+    'current_price': ['Current_Price', 'Текущая цена'],
+    'unrealized_pnl': ['Unrealized_PNL', 'Unreal PNL', 'Нереализованный PNL'],
+    'last_updated': ['Last_Updated', 'Последнее обновление'],
+
+    # --- ПОЛЯ БАЛАНСОВ (Account_Balances) ---
+    'account_name': ['Account_Name', 'Счет'],
+    'balance': ['Balance', 'Баланс'],
+    'entity_type': ['Entity_Type', 'Тип счета'],
+
+    # --- ПОЛЯ FIFO (Fifo_Log & Core_Trades) ---
     'fifo_consumed_qty': ['Fifo_Consumed_Qty', 'FIFO Потреблено', 'fifoconsumedqty'],
     'fifo_sell_processed': ['Fifo_Sell_Processed', 'FIFO Продажа Обработана', 'fifosellprocessed'],
-    'movement_id': ['Movement_ID', 'ID Движения'], 'asset': ['Asset', 'Актив', 'Валюта'],
-    'source_name': ['Source_Name', 'Источник'], 'destination_name': ['Destination_Name', 'Назначение'],
-    'fee_amount': ['Fee_Amount', 'Сумма комиссии'], 'fee_asset': ['Fee_Asset', 'Валюта комиссии'],
-    'transaction_id_blockchain': ['Transaction_ID_Blockchain', 'TX ID'],
-    'net_amount': ['Net_Amount', 'Amount', 'Количество', 'Объем', 'Кол-во'],
-    'avg_entry_price': ['Avg_Entry_Price', 'Avg Price', 'Средняя цена входа'],
-    'current_price': ['Current_Price', 'Текущая цена'], 'unrealized_pnl': ['Unrealized_PNL', 'Unreal PNL', 'Нереализованный PNL'],
-    'last_updated': ['Last_Updated', 'Последнее обновление'],
-    'account_name': ['Account_Name', 'Счет'], 'balance': ['Balance', 'Баланс'], 'entity_type': ['Entity_Type', 'Тип счета'],
-    'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'], 'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'],
-    'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'], 'buy_price': ['Buy_Price', 'Цена Покупки'],
-    'sell_price': ['Sell_Price', 'Цена Продажи'], 'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
-    'timestamp_closed': ['Timestamp_Closed', 'Время Закрытия'], 'buy_timestamp': ['Buy_Timestamp', 'Время Покупки'],
+    'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'],
+    'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'],
+    'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'],
+    'buy_price': ['Buy_Price', 'Цена Покупки'],
+    'sell_price': ['Sell_Price', 'Цена Продажи'],
+    'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
+    'timestamp_closed': ['Timestamp_Closed', 'Время Закрытия'],
+    'buy_timestamp': ['Buy_Timestamp', 'Время Покупки'],
+
+    # --- ПОЛЯ АНАЛИТИКИ (Analytics) ---
+    'date_generated': ['Date_Generated', 'Дата генерации'],
+    'total_realized_pnl': ['Total_Realized_PNL', 'Реализованный PNL'],
+    'total_unrealized_pnl': ['Total_Unrealized_PNL', 'Нереализованный PNL'],
+    'net_total_pnl': ['Net_Total_PNL', 'Чистый PNL'],
+    'total_trades_closed': ['Total_Trades_Closed', 'Закрыто сделок'],
+    'winning_trades_closed': ['Winning_Trades_Closed', 'Прибыльных сделок'],
+    'losing_trades_closed': ['Losing_Trades_Closed', 'Убыточных сделок'],
+    'win_rate_percent': ['Win_Rate_Percent', 'Винрейт, %'],
+    'average_win_amount': ['Average_Win_Amount', 'Средняя прибыль'],
+    'average_loss_amount': ['Average_Loss_Amount', 'Средний убыток'],
+    'profit_factor': ['Profit_Factor', 'Профит-фактор'],
+    'expectancy': ['Expectancy', 'Мат. ожидание'],
+    'total_commissions_paid': ['Total_Commissions_Paid', 'Всего комиссий'],
+    'net_invested_funds': ['Net_Invested_Funds', 'Чистые инвестиции'],
+    'portfolio_current_value': ['Portfolio_Current_Value', 'Текущая стоимость портфеля'],
+    'total_equity': ['Total_Equity', 'Общий капитал']
 }
 
 
