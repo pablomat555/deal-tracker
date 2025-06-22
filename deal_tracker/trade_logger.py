@@ -1,6 +1,6 @@
 # deal_tracker/trade_logger.py
 import uuid
-import copy  # <-- Добавлен для глубокого копирования
+import copy
 from datetime import datetime
 import logging
 from decimal import Decimal
@@ -11,6 +11,9 @@ import config
 from models import TradeData, MovementData, PositionData, BalanceData
 
 logger = logging.getLogger(__name__)
+
+# Константа для безопасного сравнения Decimal из-за ошибок округления
+EPSILON = Decimal('1e-8')
 
 
 # --- Вспомогательные функции, работающие с МОДЕЛЯМИ ---
@@ -33,7 +36,6 @@ def _find_position(symbol: str, exchange: str, all_positions: List[PositionData]
     return None
 
 
-# ИСПРАВЛЕНИЕ: Новая функция для обновления балансов в памяти
 def _apply_balance_changes_in_memory(
     current_balances: List[BalanceData],
     changes: List[Dict[str, Any]]
@@ -42,7 +44,6 @@ def _apply_balance_changes_in_memory(
     Применяет изменения к списку балансов в памяти, чтобы избежать race condition.
     Возвращает новый, обновленный список балансов.
     """
-    # Используем deepcopy, чтобы не изменять оригинальный список, переданный в другие функции
     updated_balances = copy.deepcopy(current_balances)
     balances_map = {
         (b.account_name.lower(), b.asset.upper()): b for b in updated_balances
@@ -59,7 +60,6 @@ def _apply_balance_changes_in_memory(
                 balance_obj.balance = Decimal('0')
             balance_obj.balance += change_amount
         else:
-            # Если такого баланса не было, создаем новый
             new_balance = BalanceData(
                 account_name=account, asset=asset, balance=change_amount, last_updated=datetime.now())
             updated_balances.append(new_balance)
@@ -97,14 +97,18 @@ def log_trade(
         if kwargs.get('commission') and kwargs.get('commission_asset', '').upper() == quote_asset:
             required_quote += kwargs['commission']
         balance_obj = _find_balance(exchange_lower, quote_asset, all_balances)
-        if not balance_obj or balance_obj.balance is None or balance_obj.balance < required_quote:
+
+        # ИСПРАВЛЕНО: Добавлена проверка с EPSILON
+        if not balance_obj or balance_obj.balance is None or (balance_obj.balance + EPSILON) < required_quote:
             current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
                 '0')
             return False, f"Недостаточно {quote_asset}. Нужно: {required_quote:.2f}, доступно: {current_bal:.2f}."
 
     elif trade_type.upper() == 'SELL':
         balance_obj = _find_balance(exchange_lower, base_asset, all_balances)
-        if not balance_obj or balance_obj.balance is None or balance_obj.balance < amount:
+
+        # ИСПРАВЛЕНО: Добавлена проверка с EPSILON
+        if not balance_obj or balance_obj.balance is None or (balance_obj.balance + EPSILON) < amount:
             current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
                 '0')
             return False, f"Недостаточно {base_asset}. Нужно: {amount}, доступно: {current_bal}."
@@ -134,7 +138,7 @@ def log_trade(
             f"КРИТИЧЕСКАЯ ПРОВЕРКА! Сделка {trade_id} записана, но балансы НЕ обновлены!")
         return False, "Критическая ошибка: балансы не обновлены."
 
-    # ИСПРАВЛЕНИЕ: Обновляем балансы в памяти перед синхронизацией позиции
+    # Обновляем балансы в памяти перед синхронизацией позиции
     updated_balances = _apply_balance_changes_in_memory(
         all_balances, balance_changes)
 
@@ -176,11 +180,9 @@ def _sync_open_position(trade: TradeData, all_positions: List[PositionData], all
     existing_pos = _find_position(trade.symbol, trade.exchange, all_positions)
     base_asset = trade.symbol.split('/')[0]
 
-    # Теперь эта функция получает УЖЕ обновленные балансы
     current_balance_obj = _find_balance(
         trade.exchange, base_asset, all_balances)
 
-    # Этот баланс теперь актуален, так как он из обновленного в памяти списка
     final_net_amount = current_balance_obj.balance if current_balance_obj and current_balance_obj.balance is not None else Decimal(
         '0')
 
@@ -195,7 +197,6 @@ def _sync_open_position(trade: TradeData, all_positions: List[PositionData], all
     new_avg_price = trade.price
     if trade.trade_type == 'BUY':
         if existing_pos and existing_pos.net_amount > 0:
-            # Расчет новой средней цены
             old_total_value = existing_pos.net_amount * existing_pos.avg_entry_price
             new_total_value = trade.amount * trade.price
             new_avg_price = (old_total_value +
@@ -238,7 +239,9 @@ def log_fund_movement(
             movement.source_name, movement.asset, all_balances)
         current_balance = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
             '0')
-        if current_balance < movement.amount:
+
+        # ИСПРАВЛЕНО: Добавлена проверка с EPSILON
+        if (current_balance + EPSILON) < movement.amount:
             return False, f"Недостаточно {movement.asset} на счете {movement.source_name}."
 
     if not sheets_service.add_movement(movement):
