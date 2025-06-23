@@ -15,9 +15,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Используем простые, прямые импорты
-
-
 # --- НАСТРОЙКИ И ЗАГРУЗКА ДАННЫХ ---
 st.set_page_config(layout="wide", page_title=t('page_portfolio_title'))
 st.title(t('page_portfolio_header'))
@@ -36,16 +33,14 @@ if not open_positions and not any(b.asset in INVESTMENT_ASSETS for b in account_
 else:
     portfolio_components = []
 
-    # ИСПРАВЛЕНО: Улучшенная версия функции to_decimal_safe
+    # Улучшенная безопасная обработка чисел
     def to_decimal_safe(value):
         if value is None:
             return Decimal('0')
         try:
-            # Сначала заменяем запятую, потом пытаемся преобразовать
             value = str(value).replace(',', '.')
             return Decimal(value)
         except (TypeError, InvalidOperation):
-            # Если не вышло, пробуем более агрессивную очистку
             try:
                 cleaned_val = ''.join(c for c in str(
                     value).replace(',', '.') if c in '0123456789.-')
@@ -53,7 +48,6 @@ else:
             except (TypeError, InvalidOperation):
                 return Decimal('0')
 
-    # Безопасный цикл для сбора данных
     for pos in open_positions:
         net_amount = to_decimal_safe(pos.net_amount)
         current_price = to_decimal_safe(pos.current_price)
@@ -99,8 +93,8 @@ else:
                 title=t('asset_distribution_title'),
                 hole=0.4
             )
-            fig_assets.update_traces(textinfo='percent+label', pull=[
-                                     0.05]*len(df_portfolio['asset'].unique()))
+            fig_assets.update_traces(
+                textinfo='percent+label', pull=[0.05] * len(df_portfolio['asset'].unique()))
             st.plotly_chart(fig_assets, use_container_width=True)
 
         with col2:
@@ -112,8 +106,8 @@ else:
                 title=t('location_distribution_title'),
                 hole=0.4
             )
-            fig_locations.update_traces(textinfo='percent+label', pull=[
-                                        0.05]*len(df_portfolio['location'].unique()))
+            fig_locations.update_traces(
+                textinfo='percent+label', pull=[0.05] * len(df_portfolio['location'].unique()))
             st.plotly_chart(fig_locations, use_container_width=True)
 
         st.divider()
