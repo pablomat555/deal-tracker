@@ -41,10 +41,8 @@ else:
         if value is None:
             return Decimal('0')
         try:
-            # Пытаемся преобразовать напрямую
             return Decimal(value)
         except (TypeError, InvalidOperation):
-            # Если не вышло, пробуем очистить строку от нечисловых символов
             try:
                 cleaned_val = ''.join(c for c in str(
                     value) if c in '0123456789.-')
@@ -52,14 +50,15 @@ else:
             except (TypeError, InvalidOperation):
                 return Decimal('0')
 
-    # ИСПРАВЛЕНО: Безопасный цикл для сбора данных
+    # Безопасный цикл для сбора данных
     for pos in open_positions:
         net_amount = to_decimal_safe(pos.net_amount)
         current_price = to_decimal_safe(pos.current_price)
 
-        # Сравнение происходит уже с гарантированно числовыми Decimal
         if net_amount > 0 and current_price > 0:
+            # ИСПРАВЛЕНО: Используем уже обработанные Decimal-переменные
             value_usd = net_amount * current_price
+
             portfolio_components.append({
                 'category': t('category_crypto'),
                 'asset': pos.symbol.split('/')[0],
