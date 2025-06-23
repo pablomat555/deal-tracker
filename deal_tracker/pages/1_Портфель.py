@@ -41,13 +41,14 @@ else:
         if value is None:
             return Decimal('0')
         try:
+            # Пытаемся преобразовать напрямую
             return Decimal(value)
         except (TypeError, InvalidOperation):
-            # Попробуем очистить строку, если прямое преобразование не удалось
+            # Если не вышло, пробуем очистить строку от нечисловых символов
             try:
                 cleaned_val = ''.join(c for c in str(
                     value) if c in '0123456789.-')
-                return Decimal(cleaned_val) if cleaned_val else Decimal('0')
+                return Decimal(cleaned_val) if cleaned_val and cleaned_val != '-' else Decimal('0')
             except (TypeError, InvalidOperation):
                 return Decimal('0')
 
@@ -56,6 +57,7 @@ else:
         net_amount = to_decimal_safe(pos.net_amount)
         current_price = to_decimal_safe(pos.current_price)
 
+        # Сравнение происходит уже с гарантированно числовыми Decimal
         if net_amount > 0 and current_price > 0:
             value_usd = net_amount * current_price
             portfolio_components.append({
@@ -117,7 +119,6 @@ else:
         st.divider()
         st.markdown(f"### {t('detailed_portfolio_header')}")
 
-        # Переименовываем колонки перед отображением для соответствия переводам
         df_display = df_portfolio.rename(columns={
             'category': t('col_category'),
             'asset': t('col_asset'),
