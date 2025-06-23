@@ -8,14 +8,15 @@ import pandas as pd
 import streamlit as st
 import os
 import sys
+from decimal import Decimal, InvalidOperation  # <--- Добавлен импорт
 
 # Добавляем корень проекта в путь.
-# Для файла в pages/.. -> это папка deal_tracker.
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# ИСПРАВЛЕНО: Используем простые, прямые импорты
+# Используем простые, прямые импорты
+
 
 # --- НАСТРОЙКИ И ЗАГРУЗКА ДАННЫХ ---
 st.set_page_config(layout="wide", page_title=t('page_portfolio_title'))
@@ -34,14 +35,29 @@ if not open_positions and not any(b.asset in INVESTMENT_ASSETS for b in account_
     st.info(t('no_portfolio_data'))
 else:
     portfolio_components = []
+
+    # ИСПРАВЛЕНО: Добавлена безопасная обработка данных
     for pos in open_positions:
-        if pos.net_amount and pos.current_price and pos.net_amount > 0 and pos.current_price > 0:
-            portfolio_components.append({
-                'category': t('category_crypto'),
-                'asset': pos.symbol.split('/')[0],
-                'value_usd': pos.net_amount * pos.current_price,
-                'location': pos.exchange
-            })
+        try:
+            # Принудительно преобразуем в Decimal для безопасного сравнения
+            net_amount_dec = Decimal(
+                pos.net_amount) if pos.net_amount is not None else Decimal(0)
+            current_price_dec = Decimal(
+                pos.current_price) if pos.current_price is not None else Decimal(0)
+
+            if net_amount_dec > 0 and current_price_dec > 0:
+                portfolio_components.append({
+                    'category': t('category_crypto'),
+                    'asset': pos.symbol.split('/')[0],
+                    'value_usd': net_amount_dec * current_price_dec,
+                    'location': pos.exchange
+                })
+        except (InvalidOperation, TypeError):
+            # Пропускаем позицию, если ее данные некорректны (например, цена - это строка "error")
+            logging.warning(
+                f"Пропуск позиции {pos.symbol} из-за некорректных данных (amount: {pos.net_amount}, price: {pos.current_price})")
+            continue
+
     for balance in account_balances:
         if balance.asset in INVESTMENT_ASSETS and balance.balance and balance.balance > 0:
             portfolio_components.append({
@@ -55,7 +71,6 @@ else:
         st.info(t('no_portfolio_data'))
     else:
         df_portfolio = pd.DataFrame(portfolio_components)
-
         total_portfolio_value = df_portfolio['value_usd'].sum()
 
         st.metric(t('total_selected_assets_value'), dashboard_utils.format_number(
