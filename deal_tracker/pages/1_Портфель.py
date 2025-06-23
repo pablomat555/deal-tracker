@@ -1,25 +1,21 @@
 # pages/1_Портфель.py
-
-# --- НАЧАЛО УНИВЕРСАЛЬНОГО БЛОКА ---
-from deal_tracker.locales import t
-from deal_tracker import config
-from deal_tracker import dashboard_utils
+from locales import t
+import dashboard_utils
+import config
 import logging
 import plotly.express as px
 import pandas as pd
 import streamlit as st
-import sys
 import os
+import sys
 
-# 1. Добавляем корневую папку проекта в системный путь
+# Добавляем корень проекта в путь.
+# Для файла в pages/.. -> это папка deal_tracker.
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# 2. Теперь импорты делаем явными, от имени главного пакета
-# Явные импорты из пакета deal_tracker
-# --- КОНЕЦ УНИВЕРСАЛЬНОГО БЛОКА ---
-
+# ИСПРАВЛЕНО: Используем простые, прямые импорты
 
 # --- НАСТРОЙКИ И ЗАГРУЗКА ДАННЫХ ---
 st.set_page_config(layout="wide", page_title=t('page_portfolio_title'))
@@ -39,7 +35,6 @@ if not open_positions and not any(b.asset in INVESTMENT_ASSETS for b in account_
 else:
     portfolio_components = []
     for pos in open_positions:
-        # Проверка на None для всех числовых атрибутов
         if pos.net_amount and pos.current_price and pos.net_amount > 0 and pos.current_price > 0:
             portfolio_components.append({
                 'category': t('category_crypto'),

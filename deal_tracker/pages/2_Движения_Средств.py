@@ -1,22 +1,19 @@
 # pages/2_Движения_Средств.py
-
-# --- НАЧАЛО УНИВЕРСАЛЬНОГО БЛОКА ---
-from deal_tracker.locales import t
-from deal_tracker import dashboard_utils
+from locales import t
+import dashboard_utils
 import logging
 import pandas as pd
 import streamlit as st
-import sys
 import os
+import sys
 
-# 1. Добавляем корневую папку проекта в системный путь
+# Добавляем корень проекта в путь.
+# Для файла в pages/.. -> это папка deal_tracker.
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# 2. Теперь импорты делаем явными, от имени главного пакета
-# Явные импорты из пакета deal_tracker
-# --- КОНЕЦ УНИВЕРСАЛЬНОГО БЛОКА ---
+# ИСПРАВЛЕНО: Используем простые, прямые импорты
 
 
 # --- НАСТРОЙКА СТРАНИЦЫ И ЗАГРУЗКА ---
