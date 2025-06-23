@@ -1,19 +1,21 @@
 # pages/1_Портфель.py
 from locales import t
-import config
 import dashboard_utils
-import streamlit as st
-import pandas as pd
-from decimal import Decimal, InvalidOperation
-import plotly.express as px
+import config
 import logging
+import plotly.express as px
+import pandas as pd
+import streamlit as st
 import os
 import sys
+from decimal import Decimal, InvalidOperation
 
-# Добавляем корень проекта в путь для корректных импортов
+# Добавляем корень проекта в путь.
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+
+# Используем простые, прямые импорты
 
 
 # --- НАСТРОЙКИ И ЗАГРУЗКА ДАННЫХ ---
@@ -27,7 +29,6 @@ all_data = dashboard_utils.load_all_dashboard_data()
 open_positions = all_data.get('open_positions', [])
 account_balances = all_data.get('account_balances', [])
 INVESTMENT_ASSETS = getattr(config, 'INVESTMENT_ASSETS', ['USDT', 'USDC'])
-
 
 # --- ОСНОВНАЯ ЛОГИКА ---
 if not open_positions and not any(b.asset in INVESTMENT_ASSETS for b in account_balances):
