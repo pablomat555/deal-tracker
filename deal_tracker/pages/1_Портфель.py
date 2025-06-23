@@ -36,27 +36,28 @@ if not open_positions and not any(b.asset in INVESTMENT_ASSETS for b in account_
 else:
     portfolio_components = []
 
-    # Вспомогательная функция для безопасного преобразования в Decimal
+    # ИСПРАВЛЕНО: Улучшенная версия функции to_decimal_safe
     def to_decimal_safe(value):
         if value is None:
             return Decimal('0')
         try:
+            # Сначала заменяем запятую, потом пытаемся преобразовать
+            value = str(value).replace(',', '.')
             return Decimal(value)
         except (TypeError, InvalidOperation):
+            # Если не вышло, пробуем более агрессивную очистку
             try:
                 cleaned_val = ''.join(c for c in str(
-                    value) if c in '0123456789.-')
+                    value).replace(',', '.') if c in '0123456789.-')
                 return Decimal(cleaned_val) if cleaned_val and cleaned_val != '-' else Decimal('0')
             except (TypeError, InvalidOperation):
                 return Decimal('0')
 
     # Безопасный цикл для сбора данных
     for pos in open_positions:
-        # Принудительно преобразуем в Decimal перед использованием
         net_amount = to_decimal_safe(pos.net_amount)
         current_price = to_decimal_safe(pos.current_price)
 
-        # Сравнение происходит уже с гарантированно числовыми Decimal
         if net_amount > 0 and current_price > 0:
             value_usd = net_amount * current_price
             portfolio_components.append({
