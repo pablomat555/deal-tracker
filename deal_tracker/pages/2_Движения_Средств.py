@@ -1,6 +1,7 @@
 # pages/2_Движения_Средств.py
 from locales import t
 import dashboard_utils
+import config  # <--- ВОЗВРАЩАЕМ НЕОБХОДИМЫЙ ИМПОРТ
 import logging
 import pandas as pd
 import streamlit as st
@@ -8,7 +9,6 @@ import os
 import sys
 
 # Добавляем корень проекта в путь.
-# Для файла в pages/.. -> это папка deal_tracker.
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -37,7 +37,7 @@ else:
     df_display[t('col_date')] = pd.to_datetime(df['timestamp'])
     df_display[t('col_type')] = df['movement_type']
     df_display[t('col_amount')] = df['amount'].map(
-        lambda x: dashboard_utils.format_number(x, precision_key='QTY_DISPLAY_PRECISION'))
+        lambda x: dashboard_utils.format_number(x, precision=config.QTY_DISPLAY_PRECISION))
     df_display[t('col_currency')] = df['asset']
     df_display[t('col_from')] = df['source_name'].fillna(t('external_source'))
     df_display[t('col_to')] = df['destination_name'].fillna(
