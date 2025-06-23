@@ -7,21 +7,20 @@ import pandas as pd
 import logging
 import os
 import sys
-from decimal import Decimal, InvalidOperation  # <--- Добавлен импорт
+from decimal import Decimal, InvalidOperation
 
-# Добавляем корень проекта в путь, чтобы найти другие модули
+# Добавляем корень проекта в путь для корректных импортов
 project_root = os.path.abspath(os.path.dirname(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Теперь импорты работают
 
 # --- НАСТРОЙКА СТРАНИЦЫ И ЛОГГЕР ---
 st.set_page_config(layout="wide", page_title=t('app_title'))
 logger = logging.getLogger(__name__)
 
-# --- ФУНКЦИИ ОТОБРАЖЕНИЯ (АДАПТИРОВАНЫ ПОД МОДЕЛИ) ---
 
+# --- ФУНКЦИИ ОТОБРАЖЕНИЯ (ФИНАЛЬНАЯ ВЕРСИЯ) ---
 
 def display_capital_overview(latest_analytics):
     """Отображает верхний блок с ключевыми метриками капитала."""
@@ -30,69 +29,103 @@ def display_capital_overview(latest_analytics):
         return
 
     st.markdown(f"### {t('capital_overview_header')}")
-    col1, col2, col3 = st.columns(3)
+    # ИСПРАВЛЕНО: Теперь 4 колонки для детального PNL
+    col1, col2, col3, col4 = st.columns(4)
 
     # Прямой доступ к атрибутам модели
     col1.metric(t('total_equity'), dashboard_utils.format_number(
         latest_analytics.total_equity, currency_symbol=config.BASE_CURRENCY))
     col2.metric(t('net_invested'), dashboard_utils.format_number(
         latest_analytics.net_invested_funds, currency_symbol=config.BASE_CURRENCY))
+
+    # Детализация PNL
+    realized_pnl = latest_analytics.total_realized_pnl
+    unrealized_pnl = latest_analytics.total_unrealized_pnl
+    net_pnl = latest_analytics.net_total_pnl
+
     col3.metric(t('total_pnl'),
                 dashboard_utils.format_number(
-                    latest_analytics.net_total_pnl, add_plus_sign=True, currency_symbol=config.BASE_CURRENCY),
-                delta=f"{latest_analytics.net_total_pnl:+.2f}")
+                    net_pnl, add_plus_sign=True, currency_symbol=config.BASE_CURRENCY),
+                delta=f"{net_pnl:+.2f}")
+
+    with col4.container(border=True):
+        st.markdown(
+            f"<small>{t('realized_pnl')}: **{dashboard_utils.format_number(realized_pnl, add_plus_sign=True)}**</small>", unsafe_allow_html=True)
+        st.markdown(
+            f"<small>{t('unrealized_pnl')}: **{dashboard_utils.format_number(unrealized_pnl, add_plus_sign=True)}**</small>", unsafe_allow_html=True)
+
     st.caption(
         f"{t('data_from')} {latest_analytics.date_generated.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-# ИСПРАВЛЕНО: Заменена на безопасную версию
 def display_active_investments(positions_data):
-    """Отображает секцию с активными инвестициями (с безопасной обработкой типов)."""
+    """Отображает секцию с активными инвестициями."""
     st.markdown(f"### {t('investments_header')}")
     if not positions_data:
         st.info(t('no_open_positions'))
         return
 
-    # DataFrame создается из списка объектов
-    df = pd.DataFrame([p.__dict__ for p in positions_data])
-
-    # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
-    # Вспомогательная функция для безопасного преобразования в Decimal
+    # Вспомогательная функция для безопасного преобразования
     def to_decimal_safe(value):
+        if value is None:
+            return Decimal('0')
         try:
-            # Возвращаем 0, если значение пустое или не может быть преобразовано
-            return Decimal(value) if value is not None else Decimal(0)
+            return Decimal(value)
         except (TypeError, InvalidOperation):
-            return Decimal(0)
+            return Decimal('0')
 
-    # Принудительно и безопасно конвертируем колонки в Decimal
-    df['net_amount_calc'] = df['net_amount'].apply(to_decimal_safe)
-    df['current_price_calc'] = df['current_price'].apply(to_decimal_safe)
-    df['avg_entry_price_calc'] = df['avg_entry_price'].apply(to_decimal_safe)
-    df['unrealized_pnl_calc'] = df['unrealized_pnl'].apply(to_decimal_safe)
+    # Готовим данные
+    processed_positions = []
+    for pos in positions_data:
+        net_amount = to_decimal_safe(pos.net_amount)
+        current_price = to_decimal_safe(pos.current_price)
+        avg_entry_price = to_decimal_safe(pos.avg_entry_price)
+        unrealized_pnl = to_decimal_safe(pos.unrealized_pnl)
 
-    # Все вычисления теперь делаются с гарантированно числовыми колонками
-    df['Current_Value'] = df['net_amount_calc'] * df['current_price_calc']
-    # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        current_value = net_amount * current_price
 
-    total_value = df['Current_Value'].sum()
-    df['Share_%'] = (df['Current_Value'] / total_value *
+        processed_positions.append({
+            'symbol': pos.symbol,
+            'exchange': pos.exchange,
+            'net_amount': net_amount,
+            'avg_entry_price': avg_entry_price,
+            'current_price': current_price,
+            'current_value': current_value,
+            'unrealized_pnl': unrealized_pnl
+        })
+
+    if not processed_positions:
+        st.info(t('no_open_positions'))
+        return
+
+    df = pd.DataFrame(processed_positions)
+    total_value = df['current_value'].sum()
+    df['share_%'] = (df['current_value'] / total_value *
                      100) if total_value > 0 else 0
 
-    # Создаем DataFrame для отображения с форматированием, используя новые '..._calc' колонки
+    # Создаем DataFrame для отображения
     df_display = pd.DataFrame({
         t('col_symbol'): df['symbol'],
         t('col_exchange'): df['exchange'],
-        t('col_qty'): df['net_amount_calc'].map(lambda x: dashboard_utils.format_number(x, config.QTY_DISPLAY_PRECISION)),
-        t('col_avg_entry'): df['avg_entry_price_calc'].map(lambda x: dashboard_utils.format_number(x, config.PRICE_DISPLAY_PRECISION)),
-        t('col_price'): df['current_price_calc'].map(lambda x: dashboard_utils.format_number(x, config.PRICE_DISPLAY_PRECISION)),
-        t('col_value'): df['Current_Value'].map(lambda x: dashboard_utils.format_number(x, config.USD_DISPLAY_PRECISION)),
-        t('col_share'): df['Share_%'].map(lambda x: f"{dashboard_utils.format_number(x, '0.01')}%"),
-        t('col_pnl_sum'): df['unrealized_pnl_calc'].map(lambda x: dashboard_utils.format_number(x, add_plus_sign=True)),
+        t('col_qty'): df['net_amount'],
+        t('col_avg_entry'): df['avg_entry_price'],
+        t('col_price'): df['current_price'],
+        # ИСПРАВЛЕНО: Добавлена колонка стоимости
+        t('col_value'): df['current_value'],
+        t('col_share'): df['share_%'],
+        t('col_pnl_sum'): df['unrealized_pnl'],
     })
 
-    styler = df_display.style.map(
-        dashboard_utils.style_pnl_value, subset=[t('col_pnl_sum')])
+    # Применяем форматирование и стили
+    styler = df_display.style.format({
+        t('col_qty'): "{:.4f}",
+        t('col_avg_entry'): "{:.4f}",
+        t('col_price'): "{:.4f}",
+        t('col_value'): "{:,.2f} $",
+        t('col_share'): "{:.2f}%",
+        t('col_pnl_sum'): "{:+.2f} $"
+    }).map(dashboard_utils.style_pnl_value, subset=[t('col_pnl_sum')])
+
     st.dataframe(styler, hide_index=True, use_container_width=True)
 
 
@@ -104,8 +137,7 @@ def display_recent_trades(trades_data):
             return
 
         df = pd.DataFrame([t.__dict__ for t in trades_data])
-        df_sorted = df.sort_values(by="timestamp", ascending=False).head(
-            15)  # Показываем последние 15
+        df_sorted = df.sort_values(by="timestamp", ascending=False).head(15)
 
         df_display = pd.DataFrame({
             t('col_date'): pd.to_datetime(df_sorted['timestamp']).dt.strftime('%Y-%m-%d %H:%M'),
@@ -127,11 +159,10 @@ all_data = dashboard_utils.load_all_dashboard_data()
 analytics_history = all_data.get('analytics_history', [])
 latest_analytics = analytics_history[-1] if analytics_history else None
 
-# --- БЛОК ФИЛЬТРОВ (теперь работает с объектами) ---
+# --- БЛОК ФИЛЬТРОВ ---
 st.markdown("---")
 col1, col2 = st.columns(2)
 
-# Собираем уникальные значения из списков объектов
 all_exchanges = sorted(
     list(set(p.exchange for p in all_data.get('open_positions', []))))
 all_symbols = sorted(
@@ -142,7 +173,6 @@ selected_exchanges = col1.multiselect(
 selected_symbols = col2.multiselect(
     t('filter_by_asset'), options=all_symbols, default=st.session_state.get('sym_filter', []))
 
-# Сохраняем состояние фильтров
 st.session_state['exch_filter'] = selected_exchanges
 st.session_state['sym_filter'] = selected_symbols
 
@@ -162,10 +192,10 @@ if selected_symbols:
     trades_to_display = [
         t for t in trades_to_display if t.symbol in selected_symbols]
 
+
 # --- Отображение всех блоков ---
 display_capital_overview(latest_analytics)
 st.divider()
 display_active_investments(positions_to_display)
 st.divider()
-# Место для display_trading_results_section (будет на другой странице)
 display_recent_trades(trades_to_display)
