@@ -1,4 +1,3 @@
-
 # deal_tracker/dashboard.py
 from locales import t
 import config
@@ -11,7 +10,7 @@ import sys
 from decimal import Decimal, InvalidOperation
 
 # Добавляем корень проекта в путь для корректных импортов
-project_root = os.path.abspath(os.path.dirname(__file__))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -21,19 +20,29 @@ logger = logging.getLogger(__name__)
 
 # --- ПЕРЕКЛЮЧАТЕЛЬ ЯЗЫКА ---
 with st.sidebar:
+    lang_options = ["ru", "en"]
+    current_lang = st.session_state.get("lang", "ru")
+    lang_index = lang_options.index(
+        current_lang) if current_lang in lang_options else 0
     lang = st.radio("🌐 Язык / Language",
-                    options=["ru", "en"], index=0 if st.session_state.get("lang") == "ru" else 1)
+                    options=lang_options, index=lang_index)
     st.session_state["lang"] = lang
+
+# --- УНИВЕРСАЛЬНЫЕ ФУНКЦИИ ФОРМАТИРОВАНИЯ ---
+
+
+def format_colored_pnl(val: any) -> str:
+    """
+    Форматирует PnL в HTML-строку с цветом, используя утилиты из dashboard_utils.
+    """
+    style = dashboard_utils.style_pnl_value(val)
+    formatted_number = dashboard_utils.format_number(val, add_plus_sign=True)
+    return f"<span style='{style}'>{formatted_number}</span>"
 
 # --- ФУНКЦИИ ОТОБРАЖЕНИЯ ---
 
 
-def format_colored_pnl(value):
-    color = "green" if value >= 0 else "red"
-    return f"<span style='color:{color};'>{dashboard_utils.format_number(value, add_plus_sign=True)}</span>"
-
-
-def display_capital_overview(latest_analytics):
+def display_capital_overview(latest_analytics: dashboard_utils.AnalyticsData):
     if not latest_analytics:
         st.info(t('no_data_for_analytics'))
         return
@@ -47,9 +56,6 @@ def display_capital_overview(latest_analytics):
         latest_analytics.net_invested_funds, currency_symbol=config.BASE_CURRENCY))
 
     net_pnl = latest_analytics.net_total_pnl
-    realized_pnl = latest_analytics.total_realized_pnl
-    unrealized_pnl = latest_analytics.total_unrealized_pnl
-
     col3.metric(t('total_pnl'),
                 dashboard_utils.format_number(
                     net_pnl, add_plus_sign=True, currency_symbol=config.BASE_CURRENCY),
@@ -57,15 +63,15 @@ def display_capital_overview(latest_analytics):
 
     with col4.container(border=True):
         st.markdown(
-            f"<small>{t('realized_pnl')}: <strong>{format_colored_pnl(realized_pnl)}</strong></small>", unsafe_allow_html=True)
+            f"<small>{t('realized_pnl')}: <strong>{format_colored_pnl(latest_analytics.total_realized_pnl)}</strong></small>", unsafe_allow_html=True)
         st.markdown(
-            f"<small>{t('unrealized_pnl')}: <strong>{format_colored_pnl(unrealized_pnl)}</strong></small>", unsafe_allow_html=True)
+            f"<small>{t('unrealized_pnl')}: <strong>{format_colored_pnl(latest_analytics.total_unrealized_pnl)}</strong></small>", unsafe_allow_html=True)
 
     st.caption(
         f"{t('data_from')} {latest_analytics.date_generated.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-def display_active_investments(positions_data):
+def display_active_investments(positions_data: list):
     st.markdown(f"### {t('investments_header')}")
     if not positions_data:
         st.info(t('no_open_positions'))
@@ -82,35 +88,39 @@ def display_active_investments(positions_data):
     processed_positions = []
     for pos in positions_data:
         net_amount = to_decimal_safe(pos.net_amount)
-        avg_entry_price = to_decimal_safe(pos.avg_entry_price)
         current_price = to_decimal_safe(pos.current_price)
-        unrealized_pnl = to_decimal_safe(pos.unrealized_pnl)
         position_value = net_amount * current_price
 
         processed_positions.append({
             t('col_symbol'): pos.symbol,
             t('col_exchange'): pos.exchange,
             t('col_qty'): float(net_amount),
-            t('col_avg_entry'): float(avg_entry_price),
+            t('col_avg_entry'): float(to_decimal_safe(pos.avg_entry_price)),
             t('current_price'): float(current_price),
-            t('col_price'): float(pos.execution_price or 0),
             t('col_value'): float(position_value),
             t('col_share_percent'): f"{pos.share_percent:.2f}%" if pos.share_percent else "0.00%",
-            t('current_pnl'): format_colored_pnl(unrealized_pnl)
+            t('current_pnl'): format_colored_pnl(to_decimal_safe(pos.unrealized_pnl))
         })
 
     df = pd.DataFrame(processed_positions)
-    st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    # Используем to_html для рендера кастомного HTML в ячейках
+    st.markdown(df.to_html(escape=False, index=False,
+                justify="center"), unsafe_allow_html=True)
 
 
 # --- ГЛАВНЫЙ КОД ---
 st.title(t('app_title'))
 if st.button(t('update_button')):
-    st.experimental_rerun()
+    # Очищаем кэш данных принудительно и перезапускаем страницу
+    st.cache_data.clear()
+    st.rerun()
 
-# Загрузка данных
-latest_analytics = dashboard_utils.fetch_latest_analytics()
-positions_data = dashboard_utils.fetch_positions()
+# Централизованная загрузка данных
+all_data = dashboard_utils.load_all_dashboard_data()
+latest_analytics = all_data.get(
+    'analytics_history', [])[-1] if all_data.get('analytics_history') else None
+positions_data = all_data.get('open_positions', [])
+
 
 # Отображение
 display_capital_overview(latest_analytics)
