@@ -21,6 +21,10 @@ TRANSLATIONS = {
         'select_account_warning': "Выберите хотя бы один счет для отображения данных.",
         'investments_header': "📈 Активные инвестиции",
         'trading_results_header': "🏆 Результаты торговли",
+        # --- ДОБАВЛЕНО ---
+        'capital_overview_header': "Обзор капитала",
+        'unrealized_pnl': "Нереализованный PNL",
+        # -----------------
         'total_equity': "Общий капитал",
         'net_invested': "Вложено средств",
         'total_pnl': "Общий PNL",
@@ -111,6 +115,10 @@ TRANSLATIONS = {
         'select_account_warning': "Select at least one account to display data.",
         'investments_header': "📈 Active Investments",
         'trading_results_header': "🏆 Trading Results",
+        # --- ADDED ---
+        'capital_overview_header': "Capital Overview",
+        'unrealized_pnl': "Unrealized PNL",
+        # -------------
         'total_equity': "Total Equity",
         'net_invested': "Net Invested",
         'total_pnl': "Total PNL",

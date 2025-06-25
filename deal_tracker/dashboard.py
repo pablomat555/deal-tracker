@@ -71,11 +71,15 @@ def display_capital_overview(latest_analytics: dashboard_utils.AnalyticsData):
         f"{t('data_from')} {latest_analytics.date_generated.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-def display_active_investments(positions_data: list):
+def display_active_investments(positions_data: list, latest_analytics: dashboard_utils.AnalyticsData):
     st.markdown(f"### {t('investments_header')}")
     if not positions_data:
         st.info(t('no_open_positions'))
         return
+
+    # Получаем общий капитал для расчета доли. Добавляем защиту от None и нуля.
+    total_equity = Decimal(
+        latest_analytics.total_equity) if latest_analytics and latest_analytics.total_equity else Decimal('0')
 
     def to_decimal_safe(value):
         if value is None:
@@ -91,6 +95,10 @@ def display_active_investments(positions_data: list):
         current_price = to_decimal_safe(pos.current_price)
         position_value = net_amount * current_price
 
+        # Динамический расчет доли. Защита от деления на ноль.
+        share_percent = (position_value / total_equity) * \
+            100 if total_equity > 0 else 0
+
         processed_positions.append({
             t('col_symbol'): pos.symbol,
             t('col_exchange'): pos.exchange,
@@ -98,12 +106,11 @@ def display_active_investments(positions_data: list):
             t('col_avg_entry'): float(to_decimal_safe(pos.avg_entry_price)),
             t('current_price'): float(current_price),
             t('col_value'): float(position_value),
-            t('col_share_percent'): f"{pos.share_percent:.2f}%" if pos.share_percent else "0.00%",
+            t('col_share_percent'): f"{share_percent:.2f}%",  # ИСПРАВЛЕНО
             t('current_pnl'): format_colored_pnl(to_decimal_safe(pos.unrealized_pnl))
         })
 
     df = pd.DataFrame(processed_positions)
-    # Используем to_html для рендера кастомного HTML в ячейках
     st.markdown(df.to_html(escape=False, index=False,
                 justify="center"), unsafe_allow_html=True)
 
@@ -111,7 +118,6 @@ def display_active_investments(positions_data: list):
 # --- ГЛАВНЫЙ КОД ---
 st.title(t('app_title'))
 if st.button(t('update_button')):
-    # Очищаем кэш данных принудительно и перезапускаем страницу
     st.cache_data.clear()
     st.rerun()
 
@@ -124,4 +130,5 @@ positions_data = all_data.get('open_positions', [])
 
 # Отображение
 display_capital_overview(latest_analytics)
-display_active_investments(positions_data)
+# Передаем latest_analytics для расчета долей
+display_active_investments(positions_data, latest_analytics)
