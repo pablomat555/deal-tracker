@@ -11,23 +11,19 @@ from collections import defaultdict
 import streamlit as st
 import sheets_service
 import config
-import ccxt  # <--- ДОБАВЛЕН ИМПОРТ CCXT
-from models import AnalyticsData
+import ccxt
+# [ДОБАВЛЕНО] Явно импортируем PositionData для ясности
+from models import AnalyticsData, PositionData
 
 logger = logging.getLogger(__name__)
 
+# --- Функции форматирования (без изменений) ---
 
-# --- ВАШИ СУЩЕСТВУЮЩИЕ ФУНКЦИИ (ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ) ---
 
 def format_number(value: Any, precision_str: str = "0.01", add_plus_sign: bool = False, currency_symbol: str = "") -> str:
-    """
-    Форматирует число в красивую строку с пробелами как разделителем тысяч.
-    """
     try:
-        # Используем Decimal для точности
         val = Decimal(str(value))
         decimals = abs(Decimal(precision_str).as_tuple().exponent)
-        # Форматирование с пробелами как разделителями
         formatted_str = f"{val:,.{decimals}f}".replace(',', ' ')
         if add_plus_sign and val > 0:
             formatted_str = f"+{formatted_str}"
@@ -39,31 +35,23 @@ def format_number(value: Any, precision_str: str = "0.01", add_plus_sign: bool =
 
 
 def style_pnl_value(val: Any) -> str:
-    """Возвращает CSS-стиль для ячеек PNL в зависимости от значения."""
     try:
-        # Пытаемся обработать число напрямую
-        val_decimal = Decimal(val)
+        s_val = str(val).replace('%', '').replace(
+            ' ', '').replace('+', '').replace('$', '')
+        val_decimal = Decimal(s_val)
     except (InvalidOperation, TypeError, ValueError):
-        try:
-            # Если не вышло, пытаемся обработать как строку (удаляя форматирование)
-            s_val = str(val).replace(' ', '').replace(
-                ',', '.').replace('%', '').replace('$', '')
-            val_decimal = Decimal(s_val)
-        except (InvalidOperation, TypeError, ValueError):
-            return ''  # Возвращаем пустой стиль, если значение некорректно
-
+        return ''
     if val_decimal > 0:
-        return 'color: #16A34A;'  # Зеленый
+        return 'color: #16A34A;'
     elif val_decimal < 0:
-        return 'color: #DC2626;'  # Красный
-    return 'color: #6B7280;'  # Серый
+        return 'color: #DC2626;'
+    return 'color: #6B7280;'
+
+# --- Функции загрузки данных (без изменений) ---
 
 
 @st.cache_data(ttl=300)
 def load_all_dashboard_data() -> Dict[str, List[Any]]:
-    """
-    Централизованно загружает все данные для дэшборда из Google Sheets.
-    """
     logger.info("Загрузка всех данных для дэшборда...")
     data = {
         'analytics_history': sheets_service.get_all_records(config.ANALYTICS_SHEET_NAME, AnalyticsData),
@@ -76,32 +64,26 @@ def load_all_dashboard_data() -> Dict[str, List[Any]]:
     logger.info("Данные для дэшборда успешно загружены.")
     return data
 
+# --- Функция получения цен (ИСПРАВЛЕНА) ---
 
-# --- НОВАЯ ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ЦЕН С БИРЖ (ИНТЕГРИРОВАНА СЮДА) ---
 
 @st.cache_data(ttl=60)
-def fetch_current_prices_for_all_exchanges(positions: list) -> dict:
+def fetch_current_prices_for_all_exchanges(positions: List[PositionData]) -> dict:
     """
-    Получает актуальные рыночные цены для позиций, группируя их по биржам.
-    Возвращает вложенный словарь: {'binance': {'BTC/USDT': price}, 'bybit': {'ETH/USDT': price}}
+    [ИСПРАВЛЕНО] Получает актуальные цены, корректно работая с объектами PositionData.
     """
     if not positions:
         return {}
 
     symbols_by_exchange = defaultdict(list)
     for pos in positions:
-        # Убедимся, что у позиции есть атрибуты 'Exchange' и 'Symbol'
-        try:
-            exchange_id = pos.Exchange.lower()
-            symbol = pos.Symbol
-            if exchange_id and symbol:
-                symbols_by_exchange[exchange_id].append(symbol)
-        except AttributeError:
-            # Обработка для словарей, если get_all_open_positions возвращает их
-            exchange_id = pos.get('Exchange', '').lower()
-            symbol = pos.get('Symbol')
-            if exchange_id and symbol:
-                symbols_by_exchange[exchange_id].append(symbol)
+        # [ИСПРАВЛЕНО] Обращаемся к атрибутам объекта через точку.
+        # Добавлена проверка, чтобы избежать ошибки, если атрибут равен None.
+        exchange_id = (pos.Exchange or '').lower()
+        symbol = pos.Symbol
+
+        if exchange_id and symbol:
+            symbols_by_exchange[exchange_id].append(symbol)
 
     all_prices = defaultdict(dict)
     logger.info(f"Запрос цен с бирж: {list(symbols_by_exchange.keys())}")
