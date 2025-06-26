@@ -1,8 +1,4 @@
 # deal_tracker/dashboard_utils.py
-"""
-Вспомогательные утилиты, предназначенные ИСКЛЮЧИТЕЛЬНО
-для использования в Streamlit-дэшборде.
-"""
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List
@@ -46,54 +42,44 @@ def style_pnl_value(val: Any) -> str:
 
 
 @st.cache_data(ttl=300)
-def load_all_dashboard_data() -> Dict[str, List[Any]]:
-    logger.info("Загрузка всех данных для дэшборда...")
-    data = {
-        'analytics_history': sheets_service.get_all_records(config.ANALYTICS_SHEET_NAME, AnalyticsData),
-        'open_positions': sheets_service.get_all_open_positions(),
-    }
-    logger.info("Данные для дэшборда успешно загружены.")
-    return data
+def load_all_data_with_error_handling() -> tuple[Dict[str, List[Any]], List[str]]:
+    logger.info("Загрузка всех данных для дэшборда через dashboard_utils...")
+    analytics_records, analytics_err = sheets_service.get_all_records(
+        config.ANALYTICS_SHEET_NAME, AnalyticsData)
+    positions_records, positions_err = sheets_service.get_all_open_positions()
+    fifo_records, fifo_err = sheets_service.get_all_fifo_logs()
+    all_data = {'analytics_history': analytics_records,
+                'open_positions': positions_records, 'fifo_logs': fifo_records}
+    all_errors = analytics_err + positions_err + fifo_err
+    logger.info(f"Данные загружены. Обнаружено ошибок: {len(all_errors)}.")
+    return all_data, all_errors
 
 
 @st.cache_data(ttl=60)
 def fetch_current_prices_for_all_exchanges(positions: List[PositionData]) -> dict:
-    """
-    [ИСПРАВЛЕНО] Получает актуальные цены, корректно работая с атрибутами объектов PositionData.
-    """
     if not positions:
         return {}
-
     symbols_by_exchange = defaultdict(list)
     for pos in positions:
-        # [ИСПРАВЛЕНО] Обращаемся к атрибутам с маленькой буквы, как в models.py
         exchange_id = (pos.exchange or '').lower()
         symbol = pos.symbol
-
         if exchange_id and symbol:
             symbols_by_exchange[exchange_id].append(symbol)
-
     all_prices = defaultdict(dict)
-    logger.info(f"Запрос цен с бирж: {list(symbols_by_exchange.keys())}")
-
     for exchange_id, symbols in symbols_by_exchange.items():
         try:
-            exchange_class = getattr(ccxt, exchange_id)
-            exchange = exchange_class()
-
-            unique_symbols = list(set(symbols))
-            tickers = exchange.fetch_tickers(unique_symbols)
-
+            exchange = getattr(ccxt, exchange_id)()
+            tickers = exchange.fetch_tickers(list(set(symbols)))
             for symbol, ticker in tickers.items():
                 if ticker and ticker.get('last') is not None:
                     all_prices[exchange_id][symbol] = Decimal(
                         str(ticker['last']))
-
-            logger.info(
-                f"Успешно получены цены для {len(tickers)} символов с биржи {exchange_id}.")
         except Exception as e:
             logger.error(
                 f"Не удалось получить цены с биржи {exchange_id}: {e}")
             continue
-
     return dict(all_prices)
+
+
+def invalidate_cache():
+    sheets_service.invalidate_cache()

@@ -3,9 +3,15 @@
 import logging
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Загрузка переменных окружения из .env файла (если используется)
-load_dotenv()
+# [ИСПРАВЛЕНО] Явное указание пути к .env файлу
+# Это делает поиск .env файла более надежным, независимо от того, откуда запускается скрипт.
+# Path(__file__).parent -> папка /deal_tracker
+# .parent -> корневая папка проекта
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
 
 # --- Основные настройки ---
 # Смещение временной зоны в часах (например, 3 для UTC+3)
@@ -24,7 +30,7 @@ TELEGRAM_ADMIN_IDS_STR = os.getenv('TELEGRAM_ADMIN_IDS_STR', TELEGRAM_CHAT_ID)
 # --- Настройки Google Sheets ---
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID', 'ВАШ_SPREADSHEET_ID')
 
-# ИЗМЕНЕНО: Название переменной приведено в соответствие с sheets_service.py
+# Название переменной приведено в соответствие с sheets_service.py
 GOOGLE_CREDS_JSON_PATH = os.getenv(
     'GOOGLE_CREDS_JSON_PATH', 'credentials.json')
 

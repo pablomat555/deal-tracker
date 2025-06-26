@@ -983,3 +983,54 @@ TypeError: AnalyticsData.__init__() missing 12 required positional arguments: 't
 2025-06-26 15:34:47 - __main__ - INFO - Запуск Telegram бота...
 2025-06-26 15:34:47 - __main__ - INFO - Бот запущен и готов принимать команды.
 2025-06-26 15:34:47 - telegram.ext.Application - INFO - Application started
+2025-06-26 16:02:57 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 16:02:58 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 16:02:58 - __main__ - INFO - Бот остановлен.
+2025-06-26 16:14:27 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 16:14:27 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 16:14:27 - telegram.ext.Application - INFO - Application started
+2025-06-26 16:19:13 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 16:19:13 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 16:19:13 - __main__ - INFO - Бот остановлен.
+2025-06-26 16:19:14 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 16:19:14 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 16:19:14 - telegram.ext.Application - INFO - Application started
+2025-06-26 16:24:49 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 16:24:49 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 16:24:49 - __main__ - INFO - Бот остановлен.
+2025-06-26 16:24:51 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 16:24:51 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 16:24:51 - telegram.ext.Application - INFO - Application started
+2025-06-26 16:31:41 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 16:31:41 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 16:31:41 - telegram.ext.Application - INFO - Application started
+2025-06-26 16:46:06 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 16:46:06 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 16:46:06 - telegram.ext.Application - INFO - Application started
+2025-06-26 17:03:54 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 17:03:54 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 17:03:54 - __main__ - INFO - Бот остановлен.
+2025-06-26 17:03:55 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 17:03:55 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 17:03:56 - telegram.ext.Application - INFO - Application started
+2025-06-26 17:05:11 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 17:05:11 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 17:05:11 - __main__ - INFO - Бот остановлен.
+2025-06-26 17:05:12 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 17:05:12 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 17:05:12 - telegram.ext.Application - INFO - Application started
+2025-06-26 17:13:46 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 17:13:46 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 17:13:46 - telegram.ext.Application - INFO - Application started
+2025-06-26 17:22:56 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 17:22:56 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 17:22:56 - __main__ - INFO - Бот остановлен.
+2025-06-26 17:22:57 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 17:22:57 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 17:22:57 - telegram.ext.Application - INFO - Application started
+2025-06-26 17:35:22 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 17:35:22 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 17:35:22 - __main__ - INFO - Бот остановлен.
+2025-06-26 17:35:24 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 17:35:24 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 17:35:24 - telegram.ext.Application - INFO - Application started

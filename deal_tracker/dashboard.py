@@ -1,249 +1,93 @@
 # deal_tracker/dashboard.py
-import dashboard_utils
-import config
-from locales import t
 import streamlit as st
 import pandas as pd
 import logging
 import os
 import sys
 from decimal import Decimal
+from typing import Any
 
-# --- Настройка путей и импортов ---
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')); 
+if project_root not in sys.path: sys.path.insert(0, project_root)
 
+from locales import t
+import config
+import dashboard_utils
 
-# --- НАСТРОЙКА СТРАНИЦЫ И ЛОГГЕР ---
-# Название для вкладки браузера
 st.set_page_config(layout="wide", page_title="Trading Dashboard")
 logger = logging.getLogger(__name__)
+CURRENCY_SYMBOLS = {'USD': '$', 'EUR': '€'}
+display_currency = CURRENCY_SYMBOLS.get(config.BASE_CURRENCY, config.BASE_CURRENCY)
 
-
-# --- Вспомогательная функция для стилизации PNL ---
 def render_pnl_metric(label: str, value: Decimal):
-    """Отображает PNL в красивом блоке с цветовой подсветкой."""
     style = dashboard_utils.style_pnl_value(value)
-    formatted_value = dashboard_utils.format_number(
-        value, add_plus_sign=True, currency_symbol=config.BASE_CURRENCY)
+    formatted_value = dashboard_utils.format_number(value, add_plus_sign=True, currency_symbol=display_currency)
+    st.markdown(f"""<div style="padding: 5px; border: 1px solid #3a3a3a; border-radius: 8px; text-align: center; height: 100%;"><div style="font-size: 0.8em; color: #9ca3af;">{label}</div><div style="{style} font-size: 1.25em; font-weight: 600;">{formatted_value}</div></div>""", unsafe_allow_html=True)
 
-    html = f"""
-    <div style="padding: 5px; border: 1px solid #3a3a3a; border-radius: 8px; text-align: center; height: 100%;">
-        <div style="font-size: 0.8em; color: #9ca3af;">{label}</div>
-        <div style="{style} font-size: 1.25em; font-weight: 600;">{formatted_value}</div>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-
-# --- БОКОВАЯ ПАНЕЛЬ С ФИЛЬТРАМИ ---
 def setup_filters(positions_df: pd.DataFrame, closed_trades_df: pd.DataFrame):
-    """Настраивает и отображает виджеты фильтров в боковой панели."""
     with st.sidebar:
-        lang_options = ["ru", "en"]
-        current_lang = st.session_state.get("lang", "ru")
-        lang_index = lang_options.index(
-            current_lang) if current_lang in lang_options else 0
-        lang = st.radio("🌐 Язык / Language", options=lang_options,
-                        index=lang_index, key='lang_radio')
-        st.session_state["lang"] = lang
-        st.divider()
-        st.header(t('filters_header'))
-
-        # Собираем уникальные значения для фильтров со всех данных
-        all_exchanges = pd.concat(
-            [positions_df['exchange'], closed_trades_df['exchange']]).dropna().unique()
-        selected_exchanges = st.multiselect(
-            label=t('filter_by_exchange'), options=sorted(list(all_exchanges)), default=[])
-
-        all_symbols = pd.concat(
-            [positions_df['symbol'], closed_trades_df['symbol']]).dropna().unique()
-        selected_symbols = st.multiselect(
-            label=t('filter_by_symbol'), options=sorted(list(all_symbols)), default=[])
-
+        lang_options=["ru", "en"]; current_lang=st.session_state.get("lang", "ru"); lang_index=lang_options.index(current_lang) if current_lang in lang_options else 0; lang=st.radio("🌐 Язык / Language", options=lang_options, index=lang_index, key='lang_radio'); st.session_state["lang"]=lang; st.divider(); st.header(t('filters_header'))
+        all_exchanges=pd.concat([positions_df['exchange'], closed_trades_df['exchange']]).dropna().unique(); selected_exchanges=st.multiselect(t('filter_by_exchange'), sorted(list(all_exchanges)))
+        all_symbols=pd.concat([positions_df['symbol'], closed_trades_df['symbol']]).dropna().unique(); selected_symbols=st.multiselect(t('filter_by_symbol'), sorted(list(all_symbols)))
         return selected_exchanges, selected_symbols
 
+def display_capital_overview(latest_analytics: Any, unrealized_pnl: Decimal):
+    if not latest_analytics: return
+    realized_pnl, net_pnl = Decimal(latest_analytics.total_realized_pnl), Decimal(latest_analytics.total_realized_pnl) + unrealized_pnl
+    c1,c2,c3,c4,c5 = st.columns([2.5,2.5,2.5,2,2])
+    with c1: st.metric(t('total_equity'), dashboard_utils.format_number(Decimal(latest_analytics.total_equity), currency_symbol=display_currency))
+    with c2: st.metric(t('net_invested'), dashboard_utils.format_number(Decimal(latest_analytics.net_invested_funds), currency_symbol=display_currency))
+    with c3: st.metric(t('total_pnl'), dashboard_utils.format_number(net_pnl, add_plus_sign=True, currency_symbol=display_currency))
+    with c4: render_pnl_metric(t('realized_pnl'), realized_pnl)
+    with c5: render_pnl_metric(t('unrealized_pnl'), unrealized_pnl)
 
-# --- ФУНКЦИИ ОТОБРАЖЕНИЯ ---
-def display_capital_overview(latest_analytics: dict, unrealized_pnl_from_positions: Decimal):
-    """Отображает верхний, переработанный блок с ключевыми метриками капитала."""
-    if not latest_analytics:
-        return
+def display_active_investments(df: pd.DataFrame, prices: dict, exchanges: list, symbols: list) -> Decimal:
+    if df.empty: return Decimal('0')
+    if exchanges: df = df[df['exchange'].isin(exchanges)]
+    if symbols: df = df[df['symbol'].isin(symbols)]
+    if df.empty: st.info(t('no_open_positions_to_display')); return Decimal('0')
+    def get_price(row): ex_id, sym = str(row.get('exchange','')).lower(), row.get('symbol'); return prices.get(ex_id, {}).get(sym, Decimal('0'))
+    df['current_price'] = df.apply(get_price, axis=1)
+    for col in ['net_amount', 'avg_entry_price', 'current_price']: df[col] = df[col].apply(Decimal)
+    df['current_value'] = df['net_amount'] * df['current_price']; df['unrealized_pnl'] = (df['current_price'] - df['avg_entry_price']) * df['net_amount']; total_val = df['current_value'].sum(); df['share'] = (df['current_value'] / total_val * 100) if total_val > 0 else 0
+    d = pd.DataFrame(); d[t('col_symbol')]=df['symbol']; d[t('col_exchange')]=df['exchange']; d[t('col_qty')]=df['net_amount'].apply(lambda x:dashboard_utils.format_number(x,config.QTY_DISPLAY_PRECISION)); d[t('col_avg_entry')]=df['avg_entry_price'].apply(lambda x:dashboard_utils.format_number(x,config.PRICE_DISPLAY_PRECISION)); d[t('current_price')]=df['current_price'].apply(lambda x:dashboard_utils.format_number(x,config.PRICE_DISPLAY_PRECISION)); d[t('col_value')]=df['current_value'].apply(lambda x:dashboard_utils.format_number(x,config.USD_DISPLAY_PRECISION,currency_symbol=display_currency)); d[t('col_share_percent')]=df['share'].apply(lambda x:f"{dashboard_utils.format_number(x)}%"); d[t('current_pnl')]=df['unrealized_pnl'].apply(lambda x:dashboard_utils.format_number(x,config.USD_DISPLAY_PRECISION,add_plus_sign=True))
+    st.dataframe(d.style.applymap(dashboard_utils.style_pnl_value, subset=[t('current_pnl')]), hide_index=True, use_container_width=True)
+    return df['unrealized_pnl'].sum()
 
-    realized_pnl = Decimal(latest_analytics.total_realized_pnl)
-    net_pnl = realized_pnl + unrealized_pnl_from_positions
-
-    col1, col2, col3, col_real, col_unreal = st.columns([2.5, 2.5, 2.5, 2, 2])
-
-    with col1:
-        st.metric(t('total_equity'), dashboard_utils.format_number(
-            Decimal(latest_analytics.total_equity), currency_symbol=config.BASE_CURRENCY))
-    with col2:
-        st.metric(t('net_invested'), dashboard_utils.format_number(Decimal(
-            latest_analytics.net_invested_funds), currency_symbol=config.BASE_CURRENCY))
-    with col3:
-        st.metric(t('total_pnl'), dashboard_utils.format_number(
-            net_pnl, add_plus_sign=True, currency_symbol=config.BASE_CURRENCY))
-    with col_real:
-        render_pnl_metric(t('realized_pnl'), realized_pnl)
-    with col_unreal:
-        render_pnl_metric(t('unrealized_pnl'), unrealized_pnl_from_positions)
-
-
-def display_active_investments(positions_df: pd.DataFrame, current_prices: dict, selected_exchanges: list, selected_symbols: list) -> Decimal:
-    """Отображает таблицу активных инвестиций с учетом фильтров."""
-    if positions_df.empty:
-        st.info(t('no_open_positions'))
-        return Decimal('0')
-
-    # Применение фильтров
-    if selected_exchanges:
-        positions_df = positions_df[positions_df['exchange'].isin(
-            selected_exchanges)]
-    if selected_symbols:
-        positions_df = positions_df[positions_df['symbol'].isin(
-            selected_symbols)]
-
-    if positions_df.empty:
-        st.info(t('no_open_positions_to_display'))
-        return Decimal('0')
-
-    # Расчеты и форматирование
-    def get_price(row):
-        exchange_id = str(row.get('exchange', '')).lower()
-        symbol = row.get('symbol')
-        return current_prices.get(exchange_id, {}).get(symbol, Decimal('0'))
-
-    positions_df['current_price'] = positions_df.apply(get_price, axis=1)
-    for col in ['net_amount', 'avg_entry_price', 'current_price']:
-        positions_df[col] = positions_df[col].apply(Decimal)
-
-    positions_df['current_value'] = positions_df['net_amount'] * \
-        positions_df['current_price']
-    positions_df['unrealized_pnl'] = (
-        positions_df['current_price'] - positions_df['avg_entry_price']) * positions_df['net_amount']
-
-    total_portfolio_value = positions_df['current_value'].sum()
-    positions_df['share'] = (positions_df['current_value'] /
-                             total_portfolio_value * 100) if total_portfolio_value > 0 else 0
-
-    df_display = pd.DataFrame()
-    df_display[t('col_symbol')] = positions_df['symbol']
-    df_display[t('col_exchange')] = positions_df['exchange']
-    df_display[t('col_qty')] = positions_df['net_amount'].apply(
-        lambda x: dashboard_utils.format_number(x, precision_str=config.QTY_DISPLAY_PRECISION))
-    df_display[t('col_avg_entry')] = positions_df['avg_entry_price'].apply(
-        lambda x: dashboard_utils.format_number(x, precision_str=config.PRICE_DISPLAY_PRECISION))
-    df_display[t('current_price')] = positions_df['current_price'].apply(
-        lambda x: dashboard_utils.format_number(x, precision_str=config.PRICE_DISPLAY_PRECISION))
-    df_display[t('col_value')] = positions_df['current_value'].apply(lambda x: dashboard_utils.format_number(
-        x, currency_symbol=config.BASE_CURRENCY, precision_str=config.USD_DISPLAY_PRECISION))
-    df_display[t('col_share_percent')] = positions_df['share'].apply(
-        lambda x: f"{dashboard_utils.format_number(x)}%")
-    df_display[t('current_pnl')] = positions_df['unrealized_pnl'].apply(
-        lambda x: dashboard_utils.format_number(x, add_plus_sign=True, precision_str=config.USD_DISPLAY_PRECISION))
-
-    st.dataframe(df_display.style.applymap(dashboard_utils.style_pnl_value, subset=[
-                 t('current_pnl')]), hide_index=True, use_container_width=True)
-    return positions_df['unrealized_pnl'].sum()
-
-
-def display_closed_trades(closed_trades_df: pd.DataFrame, selected_exchanges: list, selected_symbols: list):
-    """Отображает таблицу закрытых сделок (FIFO) с учетом фильтров."""
+def display_closed_trades(df: pd.DataFrame, exchanges: list, symbols: list):
     st.markdown(f"### {t('closed_trades_header')}")
-    if closed_trades_df.empty:
-        st.info(t('no_closed_deals_data'))
-        return
-
-    # Применение фильтров
-    if selected_exchanges:
-        closed_trades_df = closed_trades_df[closed_trades_df['exchange'].isin(
-            selected_exchanges)]
-    if selected_symbols:
-        closed_trades_df = closed_trades_df[closed_trades_df['symbol'].isin(
-            selected_symbols)]
-
-    if closed_trades_df.empty:
-        st.info(t('no_closed_deals_after_filter'))
-        return
-
-    # Сортировка по дате закрытия
-    closed_trades_df = closed_trades_df.sort_values(
-        by='timestamp_closed', ascending=False)
-
-    df_display = pd.DataFrame()
-    df_display[t('col_symbol')] = closed_trades_df['symbol']
-    df_display[t('col_exchange')] = closed_trades_df['exchange']
-    df_display[t('col_timestamp_closed')] = pd.to_datetime(
-        closed_trades_df['timestamp_closed']).dt.strftime('%Y-%m-%d %H:%M')
-    df_display[t('col_qty')] = closed_trades_df['matched_qty'].apply(
-        lambda x: dashboard_utils.format_number(x, precision_str=config.QTY_DISPLAY_PRECISION))
-    df_display[t('col_buy_price')] = closed_trades_df['buy_price'].apply(
-        lambda x: dashboard_utils.format_number(x, precision_str=config.PRICE_DISPLAY_PRECISION))
-    df_display[t('col_sell_price')] = closed_trades_df['sell_price'].apply(
-        lambda x: dashboard_utils.format_number(x, precision_str=config.PRICE_DISPLAY_PRECISION))
-    df_display[t('col_pnl_fifo')] = closed_trades_df['fifo_pnl'].apply(lambda x: dashboard_utils.format_number(
-        Decimal(x), add_plus_sign=True, currency_symbol=config.BASE_CURRENCY, precision_str=config.USD_DISPLAY_PRECISION))
-
-    st.dataframe(df_display.style.applymap(dashboard_utils.style_pnl_value, subset=[
-                 t('col_pnl_fifo')]), hide_index=True, use_container_width=True)
-
+    if df.empty: st.info(t('no_closed_deals_data')); return
+    if exchanges: df = df[df['exchange'].isin(exchanges)]
+    if symbols: df = df[df['symbol'].isin(symbols)]
+    if df.empty: st.info(t('no_closed_deals_after_filter')); return
+    df = df.sort_values(by='timestamp_closed', ascending=False)
+    d = pd.DataFrame(); d[t('col_symbol')]=df['symbol']; d[t('col_exchange')]=df['exchange']; d[t('col_timestamp_closed')]=pd.to_datetime(df['timestamp_closed']).dt.strftime('%Y-%m-%d %H:%M'); d[t('col_qty')]=df['matched_qty'].apply(lambda x:dashboard_utils.format_number(x,config.QTY_DISPLAY_PRECISION)); d[t('col_buy_price')]=df['buy_price'].apply(lambda x:dashboard_utils.format_number(x,config.PRICE_DISPLAY_PRECISION)); d[t('col_sell_price')]=df['sell_price'].apply(lambda x:dashboard_utils.format_number(x,config.PRICE_DISPLAY_PRECISION)); d[t('col_pnl_fifo')]=df['fifo_pnl'].apply(lambda x:dashboard_utils.format_number(Decimal(x),config.USD_DISPLAY_PRECISION,add_plus_sign=True,currency_symbol=display_currency))
+    st.dataframe(d.style.applymap(dashboard_utils.style_pnl_value, subset=[t('col_pnl_fifo')]), hide_index=True, use_container_width=True)
 
 # --- ГЛАВНЫЙ КОД ---
-# 1. Загружаем все данные один раз
-all_data = dashboard_utils.load_all_dashboard_data()
-positions_data = all_data.get('open_positions', [])
-closed_trades_data = all_data.get('fifo_logs', [])
+all_data, all_errors = dashboard_utils.load_all_data_with_error_handling()
+positions, closed_trades, analytics = all_data.get('open_positions',[]), all_data.get('fifo_logs',[]), all_data.get('analytics_history',[])
+positions_df = pd.DataFrame([p.__dict__ for p in positions]) if positions else pd.DataFrame(columns=['symbol', 'exchange'])
+closed_trades_df = pd.DataFrame([t.__dict__ for t in closed_trades]) if closed_trades else pd.DataFrame(columns=['symbol', 'exchange'])
+selected_exchanges, selected_symbols = setup_filters(positions_df, closed_trades_df)
 
-# 2. Создаем DataFrame для удобства фильтрации
-positions_df = pd.DataFrame([p.__dict__ for p in positions_data]
-                            ) if positions_data else pd.DataFrame(columns=['symbol', 'exchange'])
-closed_trades_df = pd.DataFrame([t.__dict__ for t in closed_trades_data]
-                                ) if closed_trades_data else pd.DataFrame(columns=['symbol', 'exchange'])
+if all_errors:
+    with st.expander("⚠️ Обнаружены ошибки при чтении данных из Google Sheets", expanded=True):
+        for msg in all_errors: st.error(msg)
+        st.warning("Дэшборд может отображать неполные данные. Исправьте ошибки в таблице и обновите страницу.")
 
-# 3. Настраиваем и получаем значения фильтров
-selected_exchanges, selected_symbols = setup_filters(
-    positions_df, closed_trades_df)
+if st.sidebar.button(t('update_button')):
+    st.cache_data.clear(); dashboard_utils.invalidate_cache(); st.rerun()
 
-# 4. Кнопка "Обновить"
-if st.button(t('update_button')):
-    st.cache_data.clear()
-    dashboard_utils.invalidate_cache()  # Очищаем и кэш gspread
-    st.rerun()
+current_prices = dashboard_utils.fetch_current_prices_for_all_exchanges(positions)
+latest_analytics_obj = analytics[-1] if analytics else None
+unrealized_pnl = display_active_investments(positions_df.copy(), current_prices, [], []) if not positions_df.empty else Decimal('0')
 
-# 5. Получаем актуальные рыночные цены
-current_prices = dashboard_utils.fetch_current_prices_for_all_exchanges(
-    positions_data)
-
-# 6. Предварительный расчет Unrealized PNL для верхнего блока
-total_unrealized_pnl = Decimal('0')
-if not positions_df.empty:
-    temp_df = positions_df.copy()
-
-    def get_price(row):
-        exchange_id = str(row.get('exchange', '')).lower()
-        symbol = row.get('symbol')
-        return current_prices.get(exchange_id, {}).get(symbol, Decimal('0'))
-    temp_df['current_price'] = temp_df.apply(get_price, axis=1)
-    for col in ['net_amount', 'avg_entry_price', 'current_price']:
-        temp_df[col] = temp_df[col].apply(Decimal)
-    temp_df['unrealized_pnl'] = (
-        temp_df['current_price'] - temp_df['avg_entry_price']) * temp_df['net_amount']
-    total_unrealized_pnl = temp_df['unrealized_pnl'].sum()
-
-# 7. Отображаем все блоки
-analytics_history = all_data.get('analytics_history', [])
-latest_analytics_obj = analytics_history[-1] if analytics_history else None
-
-if latest_analytics_obj:
-    display_capital_overview(latest_analytics_obj, total_unrealized_pnl)
-else:
-    st.info(t('no_data_for_analytics'))
+if latest_analytics_obj: display_capital_overview(latest_analytics_obj, unrealized_pnl)
+else: st.info(t('no_data_for_analytics'))
 
 st.divider()
-display_active_investments(
-    positions_df.copy(), current_prices, selected_exchanges, selected_symbols)
+st.markdown("#### Активные инвестиции")
+display_active_investments(positions_df.copy(), current_prices, selected_exchanges, selected_symbols)
 st.divider()
-display_closed_trades(closed_trades_df.copy(),
-                      selected_exchanges, selected_symbols)
+display_closed_trades(closed_trades_df.copy(), selected_exchanges, selected_symbols)
