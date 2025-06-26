@@ -1,5 +1,4 @@
 # deal_tracker/dashboard.py
-# [ИЗМЕНЕНО] Убедимся, что используем наш обновленный dashboard_utils
 import dashboard_utils
 import config
 from locales import t
@@ -33,8 +32,7 @@ with st.sidebar:
 # --- ФУНКЦИИ ОТОБРАЖЕНИЯ ---
 
 
-def display_capital_overview(latest_analytics: dict):
-    """Отображает блок с общей аналитикой капитала."""
+def display_capital_overview(latest_analytics: dict, unrealized_pnl_from_positions: Decimal):
     if not latest_analytics:
         st.info(t('no_data_for_analytics'))
         return
@@ -42,17 +40,10 @@ def display_capital_overview(latest_analytics: dict):
     st.markdown(f"### {t('capital_overview_header')}")
     col1, col2, col3, col4 = st.columns(4)
 
-    # Используем .get() для безопасного доступа и safe_to_decimal для преобразования
-    total_equity = dashboard_utils.safe_to_decimal(
-        latest_analytics.get('total_equity'))
-    net_invested = dashboard_utils.safe_to_decimal(
-        latest_analytics.get('net_invested_funds'))
-    net_pnl = dashboard_utils.safe_to_decimal(
-        latest_analytics.get('net_total_pnl'))
-    realized_pnl = dashboard_utils.safe_to_decimal(
-        latest_analytics.get('total_realized_pnl'))
-    # Нереализованный PNL теперь будем считать из актуальных данных
-    unrealized_pnl = total_equity - net_invested - realized_pnl
+    total_equity = Decimal(latest_analytics.total_equity)
+    net_invested = Decimal(latest_analytics.net_invested_funds)
+    realized_pnl = Decimal(latest_analytics.total_realized_pnl)
+    net_pnl = realized_pnl + unrealized_pnl_from_positions
 
     col1.metric(t('total_equity'), dashboard_utils.format_number(
         total_equity, currency_symbol=config.BASE_CURRENCY))
@@ -65,65 +56,58 @@ def display_capital_overview(latest_analytics: dict):
         st.markdown(
             f"<small>{t('realized_pnl')}: <strong>{dashboard_utils.format_number(realized_pnl, add_plus_sign=True)}</strong></small>", unsafe_allow_html=True)
         st.markdown(
-            f"<small>{t('unrealized_pnl')}: <strong>{dashboard_utils.format_number(unrealized_pnl, add_plus_sign=True)}</strong></small>", unsafe_allow_html=True)
+            f"<small>{t('unrealized_pnl')}: <strong>{dashboard_utils.format_number(unrealized_pnl_from_positions, add_plus_sign=True)}</strong></small>", unsafe_allow_html=True)
 
-    date_generated_str = latest_analytics.get('date_generated', '')
-    st.caption(f"{t('data_from')} {date_generated_str}")
+    st.caption(
+        f"{t('data_from')} {latest_analytics.date_generated.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-def display_active_investments(positions_data: list, current_prices: dict):
-    """
-    [ПЕРЕРАБОТАНО] Отображает таблицу активных инвестиций с актуальными ценами и PNL.
-    """
+def display_active_investments(positions_data: list, current_prices: dict) -> Decimal:
     st.markdown(f"### {t('investments_header')}")
     if not positions_data:
         st.info(t('no_open_positions'))
-        return
+        return Decimal('0')
 
-    # Преобразуем список объектов/словарей в DataFrame
-    try:
-        df = pd.DataFrame([pos.__dict__ if hasattr(
-            pos, '__dict__') else pos for pos in positions_data])
-    except Exception as e:
-        st.error(f"Ошибка при создании DataFrame: {e}")
-        return
+    # Преобразуем список объектов PositionData в DataFrame
+    df = pd.DataFrame([pos.__dict__ for pos in positions_data])
 
     # 1. Применяем актуальные цены
     def get_price(row):
-        exchange_id = str(row.get('Exchange', '')).lower()
-        symbol = row.get('Symbol')
+        # [ИСПРАВЛЕНО] Ключи словаря теперь соответствуют атрибутам модели (маленькие буквы)
+        exchange_id = str(row.get('exchange', '')).lower()
+        symbol = row.get('symbol')
         return current_prices.get(exchange_id, {}).get(symbol, Decimal('0'))
 
-    df['Current_Price'] = df.apply(get_price, axis=1)
+    df['current_price'] = df.apply(get_price, axis=1)
 
     # 2. Безопасно конвертируем колонки в Decimal
-    for col in ['Net_Amount', 'Avg_Entry_Price', 'Current_Price']:
-        df[col] = df[col].apply(dashboard_utils.safe_to_decimal)
+    for col in ['net_amount', 'avg_entry_price', 'current_price']:
+        df[col] = df[col].apply(Decimal)
 
-    # 3. Рассчитываем метрики с использованием векторизации pandas
-    df['Current_Value'] = df['Net_Amount'] * df['Current_Price']
-    df['Unrealized_PNL'] = (df['Current_Price'] -
-                            df['Avg_Entry_Price']) * df['Net_Amount']
+    # 3. Рассчитываем метрики
+    df['current_value'] = df['net_amount'] * df['current_price']
+    df['unrealized_pnl'] = (df['current_price'] -
+                            df['avg_entry_price']) * df['net_amount']
 
-    total_value = df['Current_Value'].sum()
-    df['Share'] = (df['Current_Value'] / total_value *
-                   100) if total_value > 0 else 0
+    total_portfolio_value = df['current_value'].sum()
+    df['share'] = (df['current_value'] / total_portfolio_value *
+                   100) if total_portfolio_value > 0 else 0
 
     # 4. Форматируем колонки для отображения
     df_display = pd.DataFrame()
-    df_display[t('col_symbol')] = df['Symbol']
-    df_display[t('col_exchange')] = df['Exchange']
-    df_display[t('col_qty')] = df['Net_Amount'].apply(
+    df_display[t('col_symbol')] = df['symbol']
+    df_display[t('col_exchange')] = df['exchange']
+    df_display[t('col_qty')] = df['net_amount'].apply(
         lambda x: dashboard_utils.format_number(x, precision_str='0.00001'))
-    df_display[t('col_avg_entry')] = df['Avg_Entry_Price'].apply(
+    df_display[t('col_avg_entry')] = df['avg_entry_price'].apply(
         lambda x: dashboard_utils.format_number(x, precision_str='0.0001'))
-    df_display[t('col_price')] = df['Current_Price'].apply(
+    df_display[t('current_price')] = df['current_price'].apply(
         lambda x: dashboard_utils.format_number(x, precision_str='0.0001'))
-    df_display[t('col_value')] = df['Current_Value'].apply(
+    df_display[t('col_value')] = df['current_value'].apply(
         lambda x: dashboard_utils.format_number(x, currency_symbol=config.BASE_CURRENCY))
-    df_display[t('col_share_percent')] = df['Share'].apply(
+    df_display[t('col_share_percent')] = df['share'].apply(
         lambda x: f"{dashboard_utils.format_number(x)}%")
-    df_display[t('current_pnl')] = df['Unrealized_PNL'].apply(
+    df_display[t('current_pnl')] = df['unrealized_pnl'].apply(
         lambda x: dashboard_utils.format_number(x, add_plus_sign=True))
 
     # 5. Отображаем через st.dataframe со стилизацией
@@ -134,6 +118,9 @@ def display_active_investments(positions_data: list, current_prices: dict):
         use_container_width=True
     )
 
+    # Возвращаем общую сумму нереализованного PNL для верхнего блока
+    return df['unrealized_pnl'].sum()
+
 
 # --- ГЛАВНЫЙ КОД ---
 st.title(t('app_title'))
@@ -141,18 +128,21 @@ if st.button(t('update_button')):
     st.cache_data.clear()
     st.rerun()
 
-# [ИЗМЕНЕНО] Блок загрузки и обработки данных
-# 1. Загружаем статические данные из Google Sheets
+# 1. Загружаем статические данные
 all_data = dashboard_utils.load_all_dashboard_data()
 analytics_history = all_data.get('analytics_history', [])
-latest_analytics = analytics_history[-1] if analytics_history else {}
+latest_analytics_obj = analytics_history[-1] if analytics_history else None
 positions_data = all_data.get('open_positions', [])
 
-# 2. [НОВЫЙ БЛОК] Получаем актуальные рыночные цены для этих позиций
+# 2. Получаем актуальные рыночные цены
 current_prices = dashboard_utils.fetch_current_prices_for_all_exchanges(
     positions_data)
 
-# 3. Отображаем все блоки с актуальными данными
-display_capital_overview(latest_analytics)
+# 3. Отображаем все блоки
+total_unrealized_pnl = display_active_investments(
+    positions_data, current_prices)
 st.divider()
-display_active_investments(positions_data, current_prices)
+if latest_analytics_obj:
+    display_capital_overview(latest_analytics_obj, total_unrealized_pnl)
+else:
+    st.info(t('no_data_for_analytics'))

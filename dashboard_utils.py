@@ -12,12 +12,9 @@ import streamlit as st
 import sheets_service
 import config
 import ccxt
-# [ДОБАВЛЕНО] Явно импортируем PositionData для ясности
 from models import AnalyticsData, PositionData
 
 logger = logging.getLogger(__name__)
-
-# --- Функции форматирования (без изменений) ---
 
 
 def format_number(value: Any, precision_str: str = "0.01", add_plus_sign: bool = False, currency_symbol: str = "") -> str:
@@ -47,8 +44,6 @@ def style_pnl_value(val: Any) -> str:
         return 'color: #DC2626;'
     return 'color: #6B7280;'
 
-# --- Функции загрузки данных (без изменений) ---
-
 
 @st.cache_data(ttl=300)
 def load_all_dashboard_data() -> Dict[str, List[Any]]:
@@ -56,31 +51,24 @@ def load_all_dashboard_data() -> Dict[str, List[Any]]:
     data = {
         'analytics_history': sheets_service.get_all_records(config.ANALYTICS_SHEET_NAME, AnalyticsData),
         'open_positions': sheets_service.get_all_open_positions(),
-        'core_trades': sheets_service.get_all_core_trades(),
-        'fifo_logs': sheets_service.get_all_fifo_logs(),
-        'fund_movements': sheets_service.get_all_fund_movements(),
-        'account_balances': sheets_service.get_all_balances(),
     }
     logger.info("Данные для дэшборда успешно загружены.")
     return data
-
-# --- Функция получения цен (ИСПРАВЛЕНА) ---
 
 
 @st.cache_data(ttl=60)
 def fetch_current_prices_for_all_exchanges(positions: List[PositionData]) -> dict:
     """
-    [ИСПРАВЛЕНО] Получает актуальные цены, корректно работая с объектами PositionData.
+    [ИСПРАВЛЕНО] Получает актуальные цены, корректно работая с атрибутами объектов PositionData.
     """
     if not positions:
         return {}
 
     symbols_by_exchange = defaultdict(list)
     for pos in positions:
-        # [ИСПРАВЛЕНО] Обращаемся к атрибутам объекта через точку.
-        # Добавлена проверка, чтобы избежать ошибки, если атрибут равен None.
-        exchange_id = (pos.Exchange or '').lower()
-        symbol = pos.Symbol
+        # [ИСПРАВЛЕНО] Обращаемся к атрибутам с маленькой буквы, как в models.py
+        exchange_id = (pos.exchange or '').lower()
+        symbol = pos.symbol
 
         if exchange_id and symbol:
             symbols_by_exchange[exchange_id].append(symbol)
@@ -103,7 +91,6 @@ def fetch_current_prices_for_all_exchanges(positions: List[PositionData]) -> dic
 
             logger.info(
                 f"Успешно получены цены для {len(tickers)} символов с биржи {exchange_id}.")
-
         except Exception as e:
             logger.error(
                 f"Не удалось получить цены с биржи {exchange_id}: {e}")
