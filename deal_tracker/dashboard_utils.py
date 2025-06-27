@@ -5,6 +5,9 @@ from typing import Any, Dict, List
 from collections import defaultdict
 
 import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import sheets_service
 import config
 import ccxt
@@ -48,7 +51,7 @@ def style_pnl_value(val: Any) -> str:
 
 @st.cache_data(ttl=300)
 def load_all_data_with_error_handling() -> tuple[Dict[str, List[Any]], List[str]]:
-    """[ИЗМЕНЕНО] Вызывает одну пакетную функцию из sheets_service для получения всех данных."""
+    """Вызывает одну пакетную функцию из sheets_service для получения всех данных."""
     logger.info("Загрузка всех данных для дэшборда через dashboard_utils (batch)...")
     
     # Словарь, определяющий какие листы и с какими моделями нужно загрузить
@@ -114,3 +117,26 @@ def invalidate_cache():
     """Очищает кэш данных в sheets_service, чтобы принудительно перезапросить их из Google."""
     sheets_service.invalidate_cache()
     # Примечание: st.cache_data очищается отдельно в main-скрипте командой st.cache_data.clear()
+
+def create_pie_chart(df: pd.DataFrame, title: str, names_col: str, values_col: str) -> go.Figure:
+    """
+    Создает и настраивает круговой график Plotly.
+    """
+    if df.empty or values_col not in df.columns or names_col not in df.columns:
+        # Возвращаем пустую фигуру, если данных нет
+        fig = go.Figure()
+        fig.update_layout(title_text=title, annotations=[dict(text="Нет данных", showarrow=False)])
+        return fig
+
+    fig = px.pie(df, names=names_col, values=values_col, title=title, hole=0.4)
+    fig.update_traces(
+        textposition='inside',
+        textinfo='percent+label',
+        hovertemplate='<b>%{label}</b><br>Стоимость: %{value:,.2f}$<br>Доля: %{percent}<extra></extra>'
+    )
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(l=10, r=10, t=50, b=10),
+        title_x=0.5
+    )
+    return fig

@@ -16,6 +16,7 @@ TRANSLATIONS = {
         'filter_by_exchange': "Фильтр по биржам",
         'filter_by_symbol': "Фильтр по активам",
         'filter_by_account': "Фильтр по бирже/счету:",
+        'filter_by_asset': "Фильтр по монете",
         'all_exchanges': "Все биржи",
         'all_symbols': "Все символы",
         'select_account_warning': "Выберите хотя бы один счет для отображения данных.",
@@ -83,7 +84,12 @@ TRANSLATIONS = {
         'col_asset_source': 'Актив/Счет',
         'col_value_currency': f'Стоимость, {config.BASE_CURRENCY}',
         'col_share_percent': 'Доля, %',
-        # --- НОВЫЕ КЛЮЧИ ДЛЯ ЗАКРЫТЫХ СДЕЛОК ---
+        'col_icon': "Иконка",
+        'col_icon_label': " ", 
+        'col_asset': "Актив",
+        'col_location': "Местоположение",
+        'col_current_price': "Текущая цена",
+        # --- КЛЮЧИ ДЛЯ ЗАКРЫТЫХ СДЕЛОК ---
         'closed_trades_header': "📈 Учет закрытых сделок (FIFO)",
         'col_timestamp_closed': "Дата закрытия",
         # --- Сообщения об отсутствии данных ---
@@ -104,6 +110,15 @@ TRANSLATIONS = {
         'no_closed_deals_after_filter': "Нет закрытых сделок, соответствующих фильтрам.",
         'no_trades_loaded': "Данные о сделках не загружены.",
         'no_core_records': "Нет записей в базовых сделках (Core Trades).",
+        'no_portfolio_data_after_filter': "Нет данных по выбранным фильтрам.",
+        # --- Ключи для страницы Портфеля ---
+        'asset_allocation_header': "Структура по активам",
+        'asset_distribution_title': "Распределение по активам",
+        'location_allocation_header': "Структура по биржам/счетам",
+        'location_distribution_title': "Распределение по местоположению",
+        'asset_details_header': "Детализация активов",
+        'Биржа/Счет': "Биржа/Счет",
+        'Актив': "Актив",
     },
     'en': {
         'app_title': "Financial Dashboard",
@@ -115,6 +130,7 @@ TRANSLATIONS = {
         'filter_by_exchange': "Filter by Exchanges",
         'filter_by_symbol': "Filter by Symbols",
         'filter_by_account': "Filter by exchange/account:",
+        'filter_by_asset': "Filter by Asset",
         'all_exchanges': "All exchanges",
         'all_symbols': "All symbols",
         'select_account_warning': "Select at least one account to display data.",
@@ -182,7 +198,12 @@ TRANSLATIONS = {
         'col_asset_source': 'Asset/Account',
         'col_value_currency': f'Value, {config.BASE_CURRENCY}',
         'col_share_percent': 'Share, %',
-        # --- NEW KEYS FOR CLOSED TRADES ---
+        'col_icon': "Icon",
+        'col_icon_label': " ", 
+        'col_asset': "Asset",
+        'col_location': "Location",
+        'col_current_price': "Current Price",
+        # --- KEYS FOR CLOSED TRADES ---
         'closed_trades_header': "📈 Closed Trades Record (FIFO)",
         'col_timestamp_closed': "Date Closed",
         # --- No Data Messages ---
@@ -203,11 +224,24 @@ TRANSLATIONS = {
         'no_closed_deals_after_filter': "No closed deals match the filters.",
         'no_trades_loaded': "Trade data has not been loaded.",
         'no_core_records': "No records in Core Trades.",
+        'no_portfolio_data_after_filter': "No data for the selected filters.",
+        # --- Keys for Portfolio page ---
+        'asset_allocation_header': "Asset Allocation",
+        'asset_distribution_title': "Asset Distribution",
+        'location_allocation_header': "Structure by Exchange/Account",
+        'location_distribution_title': "Distribution by Location",
+        'asset_details_header': "Asset Details",
+        'Биржа/Счет': "Exchange/Account",
+        'Актив': "Asset",
     }
 }
 
 
 def t(key):
+    """
+    Возвращает переведенную строку для текущего выбранного языка.
+    Если перевод не найден, возвращает сам ключ для удобства отладки.
+    """
     lang = st.session_state.get('lang', 'ru')
     # Возвращаем ключ, если перевод не найден, для легкой отладки
     return TRANSLATIONS.get(lang, {}).get(key, key)
