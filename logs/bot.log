@@ -1034,3 +1034,131 @@ TypeError: AnalyticsData.__init__() missing 12 required positional arguments: 't
 2025-06-26 17:35:24 - __main__ - INFO - Запуск Telegram бота...
 2025-06-26 17:35:24 - __main__ - INFO - Бот запущен и готов принимать команды.
 2025-06-26 17:35:24 - telegram.ext.Application - INFO - Application started
+2025-06-26 17:41:24 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 17:41:24 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 17:41:24 - __main__ - INFO - Бот остановлен.
+2025-06-26 17:41:26 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 17:41:26 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 17:41:26 - telegram.ext.Application - INFO - Application started
+2025-06-26 17:48:23 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 17:48:23 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 17:48:23 - __main__ - INFO - Бот остановлен.
+2025-06-26 17:48:24 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 17:48:24 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 17:48:24 - telegram.ext.Application - INFO - Application started
+2025-06-26 19:13:58 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 19:13:58 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 19:13:58 - telegram.ext.Application - INFO - Application started
+2025-06-26 19:15:05 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 19:15:05 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 19:15:05 - __main__ - INFO - Бот остановлен.
+2025-06-26 19:15:06 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 19:15:06 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 19:15:06 - telegram.ext.Application - INFO - Application started
+2025-06-26 19:19:31 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-26 19:19:31 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-26 19:19:31 - __main__ - INFO - Бот остановлен.
+2025-06-26 19:19:32 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 19:19:32 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 19:19:32 - telegram.ext.Application - INFO - Application started
+2025-06-26 19:25:17 - __main__ - INFO - Запуск Telegram бота...
+2025-06-26 19:25:17 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-26 19:25:17 - telegram.ext.Application - INFO - Application started
+2025-06-27 01:10:43 - telegram.ext.Updater - ERROR - Error while getting Updates: Bad Gateway
+2025-06-27 01:10:43 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 688, in _network_loop_retry
+    if not await action_cb():
+           ^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 384, in polling_action_cb
+    raise exc
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 373, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 558, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 525, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 3584, in get_updates
+    await self._post(
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 613, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 340, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 641, in _do_post
+    return await request.post(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 200, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 383, in _request_wrapper
+    raise NetworkError(description or "Bad Gateway")
+telegram.error.NetworkError: Bad Gateway
+2025-06-27 01:10:44 - telegram.ext.Updater - ERROR - Error while getting Updates: Bad Gateway
+2025-06-27 01:10:44 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 688, in _network_loop_retry
+    if not await action_cb():
+           ^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 384, in polling_action_cb
+    raise exc
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 373, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 558, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 525, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 3584, in get_updates
+    await self._post(
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 613, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 340, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 641, in _do_post
+    return await request.post(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 200, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 383, in _request_wrapper
+    raise NetworkError(description or "Bad Gateway")
+telegram.error.NetworkError: Bad Gateway
+2025-06-27 14:08:09 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-27 14:08:09 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-27 14:08:09 - __main__ - INFO - Бот остановлен.
+2025-06-27 14:09:31 - __main__ - INFO - Запуск Telegram бота...
+2025-06-27 14:09:31 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-27 14:09:31 - telegram.ext.Application - INFO - Application started
+2025-06-27 14:26:56 - __main__ - INFO - Запуск Telegram бота...
+2025-06-27 14:26:56 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-27 14:26:56 - telegram.ext.Application - INFO - Application started
+2025-06-27 14:32:15 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-27 14:32:15 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-27 14:32:15 - __main__ - INFO - Бот остановлен.
+2025-06-27 14:32:17 - __main__ - INFO - Запуск Telegram бота...
+2025-06-27 14:32:17 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-27 14:32:17 - telegram.ext.Application - INFO - Application started
+2025-06-27 14:47:43 - __main__ - INFO - Запуск Telegram бота...
+2025-06-27 14:47:43 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-27 14:47:43 - telegram.ext.Application - INFO - Application started
+2025-06-27 14:56:41 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-27 14:56:41 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-27 14:56:41 - __main__ - INFO - Бот остановлен.
+2025-06-27 14:56:42 - __main__ - INFO - Запуск Telegram бота...
+2025-06-27 14:56:42 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-27 14:56:42 - telegram.ext.Application - INFO - Application started
+2025-06-27 14:57:26 - __main__ - INFO - Запуск Telegram бота...
+2025-06-27 14:57:26 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-27 14:57:26 - telegram.ext.Application - INFO - Application started
+2025-06-27 15:02:31 - __main__ - INFO - Запуск Telegram бота...
+2025-06-27 15:02:31 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-27 15:02:31 - telegram.ext.Application - INFO - Application started

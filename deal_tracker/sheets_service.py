@@ -2,108 +2,191 @@
 import gspread
 import logging
 import re
-import streamlit as st
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
-from typing import TypeVar, Type, Optional, List, Any, get_type_hints
+from typing import TypeVar, Type, Optional, List, Any, Dict, get_type_hints
+
 from dateutil.parser import parse as parse_datetime
-from oauth2client.service_account import ServiceAccountCredentials
+
 import config
-from models import AnalyticsData, PositionData, FifoLogData
+from models import AnalyticsData, PositionData, FifoLogData, TradeData
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
 _gspread_client: Optional[gspread.Client] = None
-_header_cache: dict[str, List[str]] = {}
+
+# --- [ИСПРАВЛЕНО] Карта сопоставления полей и названий столбцов ---
 FIELD_TO_SHEET_NAMES_MAP: dict[str, List[str]] = {
-    'timestamp': ['Timestamp', 'Время', 'Дата'], 'symbol': ['Symbol', 'Тикер'], 'exchange': ['Exchange', 'Биржа'],
-    'net_amount': ['Net_Amount', 'Кол-во'], 'avg_entry_price': ['Avg_Entry_Price', 'Средняя цена входа'],
-    'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'], 'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'],
-    'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'], 'buy_price': ['Buy_Price', 'Цена Покупки'],
-    'sell_price': ['Sell_Price', 'Цена Продажи'], 'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
-    'timestamp_closed': ['Timestamp_Closed', 'Время Закрытия'], 'date_generated': ['Date_Generated', 'Дата генерации'],
-    'total_realized_pnl': ['Total_Realized_PNL', 'Реализованный PNL'], 'total_unrealized_pnl': ['Total_Unrealized_PNL', 'Нереализованный PNL'],
-    'net_total_pnl': ['Net_Total_PNL', 'Чистый PNL'], 'total_trades_closed': ['Total_Trades_Closed', 'Закрыто сделок'],
-    'win_rate_percent': ['Win_Rate_Percent', 'Винрейт, %'], 'profit_factor': ['Profit_Factor', 'Профит-фактор'],
-    'net_invested_funds': ['Net_Invested_Funds', 'Чистые инвестиции'], 'total_equity': ['Total_Equity', 'Общий капитал']
+    # Общие
+    'symbol': ['Symbol', 'Тикер', 'Инструмент'],
+    'exchange': ['Exchange', 'Биржа'],
+    'notes': ['Notes', 'Заметки', 'Примечание'],
+    'trade_id': ['Trade_ID', 'ID Сделки'],
+    
+    # --- [ВОЗВРАЩЕНА НЕДОСТАЮЩАЯ СТРОКА] ---
+    'trade_type': ['Type', 'Тип', 'Тип сделки', 'Направление'],
+
+    # Позиции (Open_Positions)
+    'net_amount': ['Net_Amount', 'Кол-во', 'Количество'], 
+    'avg_entry_price': ['Avg_Entry_Price', 'Средняя цена входа'],
+    
+    # FIFO Логи (Fifo_Log)
+    'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'], 
+    'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'],
+    'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'], 
+    'buy_price': ['Buy_Price', 'Цена Покупки'],
+    'sell_price': ['Sell_Price', 'Цена Продажи'], 
+    'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
+    'timestamp_closed': ['Timestamp_Closed', 'Время Закрытия'], 
+    
+    # Аналитика (Analytics)
+    'date_generated': ['Date_Generated', 'Дата генерации'],
+    'total_realized_pnl': ['Total_Realized_PNL', 'Реализованный PNL'], 
+    'total_unrealized_pnl': ['Total_Unrealized_PNL', 'Нереализованный PNL'],
+    'net_total_pnl': ['Net_Total_PNL', 'Чистый PNL'], 
+    'total_trades_closed': ['Total_Trades_Closed', 'Закрыто сделок'],
+    'win_rate_percent': ['Win_Rate_Percent', 'Винрейт, %'], 
+    'profit_factor': ['Profit_Factor', 'Профит-фактор'],
+    'net_invested_funds': ['Net_Invested_Funds', 'Чистые инвестиции'], 
+    'total_equity': ['Total_Equity', 'Общий капитал'],
 }
 
 def invalidate_cache():
-    global _header_cache; _header_cache = {}; logger.info("[CACHE] Кэш заголовков очищен.")
+    """Сбрасывает gspread клиент для пересоздания соединения при следующем вызове."""
+    global _gspread_client
+    _gspread_client = None
+    logger.info("[CACHE] Клиент gspread сброшен. Соединение будет переустановлено при следующем запросе.")
 
 def _get_client() -> gspread.Client:
+    """Инициализирует и возвращает gspread клиент, используя современный метод авторизации."""
     global _gspread_client
     if _gspread_client is None:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(config.GOOGLE_CREDS_JSON_PATH, scope)
-        _gspread_client = gspread.authorize(creds)
+        try:
+            logger.info("Создание нового gspread клиента через service_account...")
+            _gspread_client = gspread.service_account(filename=config.GOOGLE_CREDS_JSON_PATH)
+            logger.info("Клиент gspread успешно создан.")
+        except Exception as e:
+            logger.critical(f"Критическая ошибка авторизации Google: {e}", exc_info=True)
+            raise
     return _gspread_client
 
-def _get_sheet_by_name(sheet_name: str) -> Optional[gspread.Worksheet]:
-    try: return _get_client().open_by_key(config.SPREADSHEET_ID).worksheet(sheet_name)
-    except Exception as e: logger.error(f"Ошибка доступа к листу '{sheet_name}': {e}"); return None
-
-def _get_headers(sheet_name: str) -> List[str]:
-    if sheet_name not in _header_cache:
-        sheet = _get_sheet_by_name(sheet_name)
-        if not sheet: return []
-        _header_cache[sheet_name] = [str(h).strip() for h in sheet.row_values(1) if h]
-    return _header_cache[sheet_name]
-
 def _find_column_index(headers: list, field_key: str) -> int:
+    """Находит индекс столбца по его возможному названию."""
     headers_lower = [h.strip().lower() for h in headers]
-    possible_names = FIELD_TO_SHEET_NAMES_MAP.get(field_key.lower(), [field_key])
+    possible_names = FIELD_TO_SHEET_NAMES_MAP.get(field_key, []) + [field_key]
     for name in possible_names:
-        try: return headers_lower.index(name.lower())
-        except ValueError: continue
-    raise ValueError(f"Не найдена колонка для поля '{field_key}' в заголовках: {headers}")
+        try:
+            return headers_lower.index(name.lower())
+        except ValueError:
+            continue
+    raise ValueError(f"Колонка для поля '{field_key}' не найдена. Ожидалось одно из: {possible_names}")
 
 def _parse_decimal(value: Any) -> Optional[Decimal]:
+    """Преобразует значение в Decimal, обрабатывая разные форматы."""
     if value is None or value == '': return None
-    try: return Decimal(str(value).replace(' ', '').replace(',', '.'))
-    except (InvalidOperation, TypeError): return None
+    try:
+        return Decimal(str(value).replace(' ', '').replace(',', '.'))
+    except (InvalidOperation, TypeError):
+        return None
 
 def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T], row_num: int) -> T:
+    """Строит Pydantic-подобную модель из строки таблицы, обрабатывая типы данных."""
     kwargs = {}
-    for field_name, field_type in get_type_hints(model_cls).items():
+    model_fields = get_type_hints(model_cls)
+    
+    for field_name, field_type in model_fields.items():
+        if field_name == 'row_number': continue
+            
+        is_optional = type(None) in getattr(field_type, '__args__', [])
+        
         try:
             col_idx = _find_column_index(headers, field_name)
             raw_value = row[col_idx] if col_idx < len(row) else None
-            is_optional = type(None) in getattr(field_type, '__args__', [])
-            if raw_value is None or raw_value == '':
-                if is_optional: kwargs[field_name] = None; continue
-                else: raise ValueError("пустое значение для обязательного поля")
+            
+            if raw_value is None or str(raw_value).strip() == '':
+                if is_optional:
+                    kwargs[field_name] = None
+                    continue
+                else:
+                    raise ValueError("пустое значение для обязательного поля")
+
             origin_type = getattr(field_type, '__origin__', field_type)
+            
             if origin_type is Decimal:
                 parsed = _parse_decimal(raw_value)
-                if parsed is None and not is_optional: raise ValueError("не удалось преобразовать в Decimal")
+                if parsed is None and not is_optional:
+                    raise ValueError(f"не удалось преобразовать '{raw_value}' в Decimal")
                 kwargs[field_name] = parsed
-            elif origin_type is datetime: kwargs[field_name] = parse_datetime(raw_value)
-            elif origin_type is int: kwargs[field_name] = int(Decimal(raw_value))
-            else: kwargs[field_name] = str(raw_value)
-        except Exception as e: raise ValueError(f"Строка {row_num}, Поле '{field_name}', Значение '{raw_value}': {e}") from e
+            elif origin_type is datetime:
+                kwargs[field_name] = parse_datetime(raw_value)
+            elif origin_type is int:
+                kwargs[field_name] = int(_parse_decimal(raw_value))
+            else:
+                kwargs[field_name] = str(raw_value)
+                
+        except ValueError as e:
+            if "Колонка для поля" in str(e) and is_optional:
+                kwargs[field_name] = None
+                continue
+            raise ValueError(f"Строка {row_num}, Поле '{field_name}': {e}") from e
+            
     return model_cls(**kwargs)
 
-def get_all_records(sheet_name: str, model_cls: Type[T]) -> tuple[List[T], List[str]]:
-    sheet = _get_sheet_by_name(sheet_name)
-    if not sheet: return [], [f"Не удалось получить доступ к листу '{sheet_name}'"]
-    records, errors = [], []
+def batch_get_records(sheets_to_fetch: Dict[str, Type[T]]) -> tuple[Dict[str, List[Any]], List[str]]:
+    """Загружает данные с нескольких листов за один API вызов."""
+    sheet_names = list(sheets_to_fetch.keys())
+    logger.info(f"Пакетный запрос данных для листов: {sheet_names}")
+    
+    all_data = {name: [] for name in sheet_names}
+    all_errors = []
+
     try:
-        headers = _get_headers(sheet_name)
-        if not headers: return [], [f"Лист '{sheet_name}' не содержит заголовков."]
-        for i, row_values in enumerate(sheet.get_all_values()[1:]):
-            if not any(row_values): continue
-            try:
-                instance = _build_model_from_row(row_values, headers, model_cls, i + 2)
-                if hasattr(instance, 'row_number'): instance.row_number = i + 2
-                records.append(instance)
-            except Exception as e: errors.append(f"Лист '{sheet_name}': {e}")
-    except Exception as e: errors.append(f"Критическая ошибка при чтении листа '{sheet_name}': {e}")
-    return records, errors
+        client = _get_client()
+        spreadsheet = client.open_by_key(config.SPREADSHEET_ID)
+        
+        batch_get_results = spreadsheet.values_batch_get(sheet_names)
+        
+        value_ranges = {item['range'].split('!')[0].strip("'"): item for item in batch_get_results.get('valueRanges', [])}
 
-def get_all_open_positions() -> tuple[List[PositionData], List[str]]:
-    return get_all_records(config.OPEN_POSITIONS_SHEET_NAME, PositionData)
+        for sheet_name in sheet_names:
+            if sheet_name not in value_ranges:
+                msg = f"Лист '{sheet_name}' не был найден в ответе API. Возможно, он пуст или имя указано неверно."
+                logger.warning(msg)
+                all_errors.append(msg)
+                continue
 
-def get_all_fifo_logs() -> tuple[List[FifoLogData], List[str]]:
-    return get_all_records(config.FIFO_LOG_SHEET_NAME, FifoLogData)
+            all_values = value_ranges[sheet_name].get('values', [])
+            
+            if not all_values or len(all_values) < 2:
+                logger.warning(f"Лист '{sheet_name}' пуст или содержит только заголовки.")
+                continue
+
+            headers = all_values[0]
+            data_rows = all_values[1:]
+            model_cls = sheets_to_fetch[sheet_name]
+            
+            records = []
+            for j, row_values in enumerate(data_rows):
+                if not any(row_values) or len(row_values) == 0: continue
+                row_num = j + 2
+                try:
+                    instance = _build_model_from_row(row_values, headers, model_cls, row_num)
+                    if hasattr(instance, 'row_number'):
+                        instance.row_number = row_num
+                    records.append(instance)
+                except Exception as e:
+                    all_errors.append(f"Лист '{sheet_name}': {e}")
+            
+            all_data[sheet_name] = records
+
+    except gspread.exceptions.SpreadsheetNotFound:
+        error_msg = f"Критическая ошибка: Таблица с ID '{config.SPREADSHEET_ID}' не найдена."
+        logger.critical(error_msg)
+        all_errors.append(error_msg)
+    except Exception as e:
+        error_msg = f"Критическая ошибка при пакетном чтении листов: {e}"
+        logger.error(error_msg, exc_info=True)
+        all_errors.append(error_msg)
+        
+    return all_data, all_errors

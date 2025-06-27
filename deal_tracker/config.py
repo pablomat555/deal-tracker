@@ -31,8 +31,7 @@ TELEGRAM_ADMIN_IDS_STR = os.getenv('TELEGRAM_ADMIN_IDS_STR', TELEGRAM_CHAT_ID)
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID', 'ВАШ_SPREADSHEET_ID')
 
 # Название переменной приведено в соответствие с sheets_service.py
-GOOGLE_CREDS_JSON_PATH = os.getenv(
-    'GOOGLE_CREDS_JSON_PATH', 'credentials.json')
+GOOGLE_CREDS_JSON_PATH = '/root/secrets/credentials.json'
 
 # --- Имена листов в Google Sheets ---
 # Эти переменные теперь будут использоваться в sheets_service.py
