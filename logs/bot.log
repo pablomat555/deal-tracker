@@ -1255,3 +1255,24 @@ telegram.error.NetworkError: Bad Gateway
 2025-06-27 17:04:16 - __main__ - INFO - Запуск Telegram бота...
 2025-06-27 17:04:16 - __main__ - INFO - Бот запущен и готов принимать команды.
 2025-06-27 17:04:16 - telegram.ext.Application - INFO - Application started
+2025-06-28 15:23:17 - __main__ - INFO - Запуск Telegram бота...
+2025-06-28 15:23:17 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-28 15:23:17 - telegram.ext.Application - INFO - Application started
+2025-06-28 15:29:08 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-28 15:29:08 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-28 15:29:08 - __main__ - INFO - Бот остановлен.
+2025-06-28 15:29:09 - __main__ - INFO - Запуск Telegram бота...
+2025-06-28 15:29:09 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-28 15:29:09 - telegram.ext.Application - INFO - Application started
+2025-06-28 15:36:45 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-28 15:36:45 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-28 15:36:45 - __main__ - INFO - Бот остановлен.
+2025-06-28 15:36:46 - __main__ - INFO - Запуск Telegram бота...
+2025-06-28 15:36:46 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-28 15:36:46 - telegram.ext.Application - INFO - Application started
+2025-06-28 16:02:26 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-28 16:02:26 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-28 16:02:27 - __main__ - INFO - Бот остановлен.
+2025-06-28 16:02:27 - __main__ - INFO - Запуск Telegram бота...
+2025-06-28 16:02:28 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-28 16:02:28 - telegram.ext.Application - INFO - Application started

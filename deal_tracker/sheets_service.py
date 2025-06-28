@@ -9,7 +9,7 @@ from typing import TypeVar, Type, Optional, List, Any, Dict, get_type_hints
 from dateutil.parser import parse as parse_datetime
 
 import config
-from models import AnalyticsData, PositionData, FifoLogData, TradeData
+from models import AnalyticsData, PositionData, FifoLogData, TradeData, MovementData, BalanceData
 
 logger = logging.getLogger(__name__)
 
@@ -18,38 +18,24 @@ _gspread_client: Optional[gspread.Client] = None
 
 # --- [ИСПРАВЛЕНО] Карта сопоставления полей и названий столбцов ---
 FIELD_TO_SHEET_NAMES_MAP: dict[str, List[str]] = {
-    # Общие
-    'symbol': ['Symbol', 'Тикер', 'Инструмент'],
-    'exchange': ['Exchange', 'Биржа'],
-    'notes': ['Notes', 'Заметки', 'Примечание'],
-    'trade_id': ['Trade_ID', 'ID Сделки'],
-    
-    # --- [ВОЗВРАЩЕНА НЕДОСТАЮЩАЯ СТРОКА] ---
-    'trade_type': ['Type', 'Тип', 'Тип сделки', 'Направление'],
-
-    # Позиции (Open_Positions)
-    'net_amount': ['Net_Amount', 'Кол-во', 'Количество'], 
-    'avg_entry_price': ['Avg_Entry_Price', 'Средняя цена входа'],
-    
-    # FIFO Логи (Fifo_Log)
-    'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'], 
-    'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'],
-    'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'], 
-    'buy_price': ['Buy_Price', 'Цена Покупки'],
-    'sell_price': ['Sell_Price', 'Цена Продажи'], 
-    'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
-    'timestamp_closed': ['Timestamp_Closed', 'Время Закрытия'], 
-    
-    # Аналитика (Analytics)
-    'date_generated': ['Date_Generated', 'Дата генерации'],
-    'total_realized_pnl': ['Total_Realized_PNL', 'Реализованный PNL'], 
-    'total_unrealized_pnl': ['Total_Unrealized_PNL', 'Нереализованный PNL'],
-    'net_total_pnl': ['Net_Total_PNL', 'Чистый PNL'], 
-    'total_trades_closed': ['Total_Trades_Closed', 'Закрыто сделок'],
-    'win_rate_percent': ['Win_Rate_Percent', 'Винрейт, %'], 
-    'profit_factor': ['Profit_Factor', 'Профит-фактор'],
-    'net_invested_funds': ['Net_Invested_Funds', 'Чистые инвестиции'], 
-    'total_equity': ['Total_Equity', 'Общий капитал'],
+    'symbol': ['Symbol', 'Тикер'], 'exchange': ['Exchange', 'Биржа'],
+    'net_amount': ['Net_Amount', 'Кол-во', 'Количество'], 'avg_entry_price': ['Avg_Entry_Price', 'Средняя цена входа'],
+    'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'], 'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'],
+    'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'], 'buy_price': ['Buy_Price', 'Цена Покупки'],
+    'sell_price': ['Sell_Price', 'Цена Продажи'], 'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
+    'timestamp_closed': ['Timestamp_Closed', 'Время Закрытия'], 'date_generated': ['Date_Generated', 'Дата генерации'],
+    'total_realized_pnl': ['Total_Realized_PNL', 'Реализованный PNL'], 'total_unrealized_pnl': ['Total_Unrealized_PNL', 'Нереализованный PNL'],
+    'net_total_pnl': ['Net_Total_PNL', 'Чистый PNL'], 'total_trades_closed': ['Total_Trades_Closed', 'Закрыто сделок'],
+    'win_rate_percent': ['Win_Rate_Percent', 'Винрейт, %'], 'profit_factor': ['Profit_Factor', 'Профит-фактор'],
+    'net_invested_funds': ['Net_Invested_Funds', 'Чистые инвестиции'], 'total_equity': ['Total_Equity', 'Общий капитал'],
+    'notes': ['Notes', 'Заметки'], 'trade_id': ['Trade_ID'], 'trade_type': ['Type', 'Тип', 'Тип сделки', 'Направление'],
+    # --- [ДОБАВЛЕНЫ НЕДОСТАЮЩИЕ КЛЮЧИ] ---
+    'movement_type': ['Type', 'Тип', 'Тип операции'],
+    'asset': ['Asset', 'Актив', 'Валюта'],
+    'amount': ['Amount', 'Количество', 'Сумма'],
+    'source_name': ['Source_Name', 'Источник', 'Откуда'],
+    'destination_name': ['Destination_Name', 'Назначение', 'Куда'],
+    'balance': ['Balance', 'Баланс'],
 }
 
 def invalidate_cache():
@@ -63,9 +49,7 @@ def _get_client() -> gspread.Client:
     global _gspread_client
     if _gspread_client is None:
         try:
-            logger.info("Создание нового gspread клиента через service_account...")
             _gspread_client = gspread.service_account(filename=config.GOOGLE_CREDS_JSON_PATH)
-            logger.info("Клиент gspread успешно создан.")
         except Exception as e:
             logger.critical(f"Критическая ошибка авторизации Google: {e}", exc_info=True)
             raise
@@ -83,10 +67,13 @@ def _find_column_index(headers: list, field_key: str) -> int:
     raise ValueError(f"Колонка для поля '{field_key}' не найдена. Ожидалось одно из: {possible_names}")
 
 def _parse_decimal(value: Any) -> Optional[Decimal]:
-    """Преобразует значение в Decimal, обрабатывая разные форматы."""
-    if value is None or value == '': return None
+    """[ИСПРАВЛЕНО] Безопасно преобразует строку в Decimal, удаляя все пробелы и меняя запятую на точку."""
+    if value is None or str(value).strip() == '':
+        return None
     try:
-        return Decimal(str(value).replace(' ', '').replace(',', '.'))
+        # Удаляем все пробелы (обычные и неразрывные) и меняем запятую
+        clean_value = str(value).replace(' ', '').replace('\u00A0', '').replace(',', '.')
+        return Decimal(clean_value)
     except (InvalidOperation, TypeError):
         return None
 
@@ -121,7 +108,9 @@ def _build_model_from_row(row: List[str], headers: List[str], model_cls: Type[T]
             elif origin_type is datetime:
                 kwargs[field_name] = parse_datetime(raw_value)
             elif origin_type is int:
-                kwargs[field_name] = int(_parse_decimal(raw_value))
+                parsed_decimal = _parse_decimal(raw_value)
+                if parsed_decimal is None: raise ValueError("не удалось преобразовать в Int")
+                kwargs[field_name] = int(parsed_decimal)
             else:
                 kwargs[field_name] = str(raw_value)
                 
@@ -142,9 +131,7 @@ def batch_get_records(sheets_to_fetch: Dict[str, Type[T]]) -> tuple[Dict[str, Li
     all_errors = []
 
     try:
-        client = _get_client()
-        spreadsheet = client.open_by_key(config.SPREADSHEET_ID)
-        
+        spreadsheet = _get_client().open_by_key(config.SPREADSHEET_ID)
         batch_get_results = spreadsheet.values_batch_get(sheet_names)
         
         value_ranges = {item['range'].split('!')[0].strip("'"): item for item in batch_get_results.get('valueRanges', [])}
@@ -162,13 +149,11 @@ def batch_get_records(sheets_to_fetch: Dict[str, Type[T]]) -> tuple[Dict[str, Li
                 logger.warning(f"Лист '{sheet_name}' пуст или содержит только заголовки.")
                 continue
 
-            headers = all_values[0]
-            data_rows = all_values[1:]
-            model_cls = sheets_to_fetch[sheet_name]
+            headers, data_rows, model_cls = all_values[0], all_values[1:], sheets_to_fetch[sheet_name]
             
             records = []
             for j, row_values in enumerate(data_rows):
-                if not any(row_values) or len(row_values) == 0: continue
+                if not any(row_values): continue
                 row_num = j + 2
                 try:
                     instance = _build_model_from_row(row_values, headers, model_cls, row_num)
@@ -176,7 +161,7 @@ def batch_get_records(sheets_to_fetch: Dict[str, Type[T]]) -> tuple[Dict[str, Li
                         instance.row_number = row_num
                     records.append(instance)
                 except Exception as e:
-                    all_errors.append(f"Лист '{sheet_name}': {e}")
+                    all_errors.append(f"Лист '{sheet_name}', строка {row_num}: {e}")
             
             all_data[sheet_name] = records
 

@@ -52,6 +52,8 @@ TRANSLATIONS = {
         'category_stables': 'Стейблкоины',
         'page_movements_title': "Движение Средств",
         'page_movements_header': "🌊 Движение Средств",
+        'external_source': "Внешний источник",
+        'external_destination': "Внешнее направление",
         # --- Колонки таблиц ---
         'col_symbol': "Актив",
         'col_exchange': "Биржа",
@@ -111,6 +113,7 @@ TRANSLATIONS = {
         'no_trades_loaded': "Данные о сделках не загружены.",
         'no_core_records': "Нет записей в базовых сделках (Core Trades).",
         'no_portfolio_data_after_filter': "Нет данных по выбранным фильтрам.",
+        'no_data_for_display': "Нет данных, соответствующих фильтрам.",
         # --- Ключи для страницы Портфеля ---
         'asset_allocation_header': "Структура по активам",
         'asset_distribution_title': "Распределение по активам",
@@ -166,6 +169,8 @@ TRANSLATIONS = {
         'category_stables': 'Stablecoins',
         'page_movements_title': "Fund Movements",
         'page_movements_header': "🌊 Fund Movements",
+        'external_source': "External Source",
+        'external_destination': "External Destination",
         # --- Table Columns ---
         'col_symbol': "Asset",
         'col_exchange': "Exchange",
@@ -225,6 +230,7 @@ TRANSLATIONS = {
         'no_trades_loaded': "Trade data has not been loaded.",
         'no_core_records': "No records in Core Trades.",
         'no_portfolio_data_after_filter': "No data for the selected filters.",
+        'no_data_for_display': "No data matching the filters.",
         # --- Keys for Portfolio page ---
         'asset_allocation_header': "Asset Allocation",
         'asset_distribution_title': "Asset Distribution",

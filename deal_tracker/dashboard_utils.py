@@ -11,8 +11,8 @@ import plotly.graph_objects as go
 import sheets_service
 import config
 import ccxt
-# Добавлены все используемые модели
-from models import AnalyticsData, PositionData, FifoLogData, TradeData
+# --- [ИСПРАВЛЕНО] Добавлены все используемые модели ---
+from models import AnalyticsData, PositionData, TradeData, FifoLogData, MovementData, BalanceData
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def style_pnl_value(val: Any) -> str:
 
 @st.cache_data(ttl=300)
 def load_all_data_with_error_handling() -> tuple[Dict[str, List[Any]], List[str]]:
-    """Вызывает одну пакетную функцию из sheets_service для получения всех данных."""
+    """Вызывает одну пакетную функцию из sheets_service для получения всех данных для всех страниц."""
     logger.info("Загрузка всех данных для дэшборда через dashboard_utils (batch)...")
     
     # Словарь, определяющий какие листы и с какими моделями нужно загрузить
@@ -59,7 +59,10 @@ def load_all_data_with_error_handling() -> tuple[Dict[str, List[Any]], List[str]
         config.ANALYTICS_SHEET_NAME: AnalyticsData,
         config.OPEN_POSITIONS_SHEET_NAME: PositionData,
         config.FIFO_LOG_SHEET_NAME: FifoLogData,
-        config.CORE_TRADES_SHEET_NAME: TradeData
+        config.CORE_TRADES_SHEET_NAME: TradeData,
+        # [ДОБАВЛЕНО] Недостающие листы
+        config.FUND_MOVEMENTS_SHEET_NAME: MovementData,
+        config.ACCOUNT_BALANCES_SHEET_NAME: BalanceData,
     }
     
     # Единый вызов для получения всех данных
@@ -71,6 +74,9 @@ def load_all_data_with_error_handling() -> tuple[Dict[str, List[Any]], List[str]
         'open_positions': all_data_from_sheets.get(config.OPEN_POSITIONS_SHEET_NAME, []),
         'fifo_logs': all_data_from_sheets.get(config.FIFO_LOG_SHEET_NAME, []),
         'core_trades': all_data_from_sheets.get(config.CORE_TRADES_SHEET_NAME, []),
+        # [ДОБАВЛЕНО]
+        'fund_movements': all_data_from_sheets.get(config.FUND_MOVEMENTS_SHEET_NAME, []),
+        'account_balances': all_data_from_sheets.get(config.ACCOUNT_BALANCES_SHEET_NAME, []),
     }
     
     logger.info(f"Данные загружены. Обнаружено ошибок: {len(all_errors)}.")
@@ -116,12 +122,10 @@ def fetch_current_prices_for_all_exchanges(positions: List[PositionData]) -> dic
 def invalidate_cache():
     """Очищает кэш данных в sheets_service, чтобы принудительно перезапросить их из Google."""
     sheets_service.invalidate_cache()
-    # Примечание: st.cache_data очищается отдельно в main-скрипте командой st.cache_data.clear()
+
 
 def create_pie_chart(df: pd.DataFrame, title: str, names_col: str, values_col: str) -> go.Figure:
-    """
-    Создает и настраивает круговой график Plotly.
-    """
+    """Создает и настраивает круговой график Plotly."""
     if df.empty or values_col not in df.columns or names_col not in df.columns:
         # Возвращаем пустую фигуру, если данных нет
         fig = go.Figure()
@@ -140,3 +144,14 @@ def create_pie_chart(df: pd.DataFrame, title: str, names_col: str, values_col: s
         title_x=0.5
     )
     return fig
+
+def get_precision_for_asset(asset_symbol: str) -> str:
+    """
+    Возвращает строку точности для форматирования в зависимости от типа актива.
+    2 знака для стейблкоинов, больше - для остальных.
+    """
+    if asset_symbol.upper() in config.INVESTMENT_ASSETS:
+        return '0.01' # 2 знака после запятой для стейблкоинов
+    else:
+        # Используем стандартную точность из конфига для остальных активов
+        return config.QTY_DISPLAY_PRECISION
