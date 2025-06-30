@@ -112,7 +112,8 @@ def _model_to_row(record: Any, headers: List[str]) -> List[str]:
     record_dict = record.__dict__
     for header in headers:
         formatted_value = ""
-        field_name = next((f_name for f_name, names in FIELD_TO_SHEET_NAMES_MAP.items() if header.lower() in [n.lower() for n in names]), header.lower())
+        # Находим первое соответствующее имя поля, чтобы избежать неоднозначности
+        field_name = next((f_name for f_name, names in FIELD_TO_SHEET_NAMES_MAP.items() if header.lower() in [n.lower() for n in names] and f_name in record_dict), header.lower())
         
         if field_name in record_dict:
             value = record_dict[field_name]
