@@ -31,7 +31,7 @@ TRANSLATIONS = {
         'win_rate': "Win Rate",
         'profit_factor': "Profit Factor",
         'total_closed_trades': "Закрыто сделок",
-        'portfolio_structure_header': "Структура портфеля",
+        'portfolio_structure_header': "Общая структура портфеля", # <-- ИЗМЕНЕНО
         'chart_asset_value': "Стоимость активов в портфеле",
         'chart_asset': "Актив",
         'chart_value': "Стоимость",
@@ -122,6 +122,11 @@ TRANSLATIONS = {
         'asset_details_header': "Детализация активов",
         'Биржа/Счет': "Биржа/Счет",
         'Актив': "Актив",
+        'Структура стейблкоинов': "Структура стейблкоинов",
+        'Стейблкоины по счетам': "Стейблкоины по счетам",
+        'Счет': "Счет",
+        'Сумма, $': "Сумма, $",
+        'Детализация всего портфеля': "Детализация всего портфеля",
     },
     'en': {
         'app_title': "Financial Dashboard",
@@ -148,7 +153,7 @@ TRANSLATIONS = {
         'win_rate': "Win Rate",
         'profit_factor': "Profit Factor",
         'total_closed_trades': "Trades Closed",
-        'portfolio_structure_header': "Portfolio Structure",
+        'portfolio_structure_header': "Overall Portfolio Structure", # <-- ИЗМЕНЕНО
         'chart_asset_value': "Value of Assets in Portfolio",
         'chart_asset': "Asset",
         'chart_value': "Value",
@@ -239,6 +244,11 @@ TRANSLATIONS = {
         'asset_details_header': "Asset Details",
         'Биржа/Счет': "Exchange/Account",
         'Актив': "Asset",
+        'Структура стейблкоинов': "Stablecoin Structure",
+        'Стейблкоины по счетам': "Stablecoins by Account",
+        'Счет': "Account",
+        'Сумма, $': "Amount, $",
+        'Детализация всего портфеля': "Full Portfolio Details",
     }
 }
 

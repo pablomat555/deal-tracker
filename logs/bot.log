@@ -1276,3 +1276,61 @@ telegram.error.NetworkError: Bad Gateway
 2025-06-28 16:02:27 - __main__ - INFO - Запуск Telegram бота...
 2025-06-28 16:02:28 - __main__ - INFO - Бот запущен и готов принимать команды.
 2025-06-28 16:02:28 - telegram.ext.Application - INFO - Application started
+2025-06-28 16:18:22 - __main__ - INFO - Запуск Telegram бота...
+2025-06-28 16:18:22 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-28 16:18:22 - telegram.ext.Application - INFO - Application started
+2025-06-28 16:26:36 - __main__ - INFO - Запуск Telegram бота...
+2025-06-28 16:26:36 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-28 16:26:36 - telegram.ext.Application - INFO - Application started
+2025-06-28 16:41:11 - __main__ - INFO - Запуск Telegram бота...
+2025-06-28 16:41:11 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-28 16:41:11 - telegram.ext.Application - INFO - Application started
+2025-06-28 16:45:30 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-28 16:45:30 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-28 16:45:30 - __main__ - INFO - Бот остановлен.
+2025-06-28 16:45:31 - __main__ - INFO - Запуск Telegram бота...
+2025-06-28 16:45:31 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-28 16:45:31 - telegram.ext.Application - INFO - Application started
+2025-06-29 15:10:08 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-29 15:10:08 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-29 15:10:08 - __main__ - INFO - Бот остановлен.
+2025-06-29 15:10:09 - __main__ - INFO - Запуск Telegram бота...
+2025-06-29 15:10:09 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-29 15:10:09 - telegram.ext.Application - INFO - Application started
+2025-06-29 15:19:25 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-29 15:19:25 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-29 15:19:25 - __main__ - INFO - Бот остановлен.
+2025-06-29 15:19:26 - __main__ - INFO - Запуск Telegram бота...
+2025-06-29 15:19:26 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-29 15:19:26 - telegram.ext.Application - INFO - Application started
+2025-06-29 15:32:20 - analytics_service - INFO - Запуск полного обновления аналитики...
+2025-06-29 15:32:20 - analytics_service - INFO - Запуск FIFO обработки...
+2025-06-29 15:32:20 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1234, in process_update
+    await coroutine
+  File "/root/apps/deal_tracker_v1.0/.venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 157, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/deal_tracker/telegram_handlers.py", line 64, in wrapped
+    return await func(update, context, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/deal_tracker/telegram_handlers.py", line 278, in update_analytics_command
+    success, message = analytics_service.calculate_and_update_analytics_sheet()
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/deal_tracker/analytics_service.py", line 167, in calculate_and_update_analytics_sheet
+    fifo_success, fifo_message = process_fifo_transactions()
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/apps/deal_tracker_v1.0/deal_tracker/analytics_service.py", line 86, in process_fifo_transactions
+    all_trades = sheets_service.get_all_core_trades()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'sheets_service' has no attribute 'get_all_core_trades'. Did you mean: 'get_all_records'?
+2025-06-29 15:52:57 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2025-06-29 15:52:57 - telegram.ext.Application - INFO - Application.stop() complete
+2025-06-29 15:52:57 - __main__ - INFO - Бот остановлен.
+2025-06-29 15:52:58 - __main__ - INFO - Запуск Telegram бота...
+2025-06-29 15:52:58 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-29 15:52:58 - telegram.ext.Application - INFO - Application started
+2025-06-30 14:13:21 - __main__ - INFO - Запуск Telegram бота...
+2025-06-30 14:13:21 - __main__ - INFO - Бот запущен и готов принимать команды.
+2025-06-30 14:13:21 - telegram.ext.Application - INFO - Application started
