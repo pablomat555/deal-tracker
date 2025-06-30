@@ -19,7 +19,7 @@ _header_cache: dict[str, List[str]] = {}
 # Полная и актуальная карта сопоставления полей и названий столбцов
 FIELD_TO_SHEET_NAMES_MAP: dict[str, List[str]] = {
     'timestamp': ['Timestamp', 'Время', 'Дата'], 'symbol': ['Symbol', 'Тикер'], 'exchange': ['Exchange', 'Биржа'], 'notes': ['Notes', 'Заметки'],
-    'net_amount': ['Net_Amount', 'Кол-во', 'Количество'], 'avg_entry_price': ['Avg_Entry_Price', 'Средняя цена входа'],
+    'net_amount': ['Net_Amount', 'Кол-во', 'Количество'], 'avg_entry_price': ['Avg_Entry_Price', 'Средняя цена входа'], 'current_price': ['Current_Price', 'Текущая цена'], 'unrealized_pnl': ['Unrealized_PNL', 'Нереализованный PNL'],
     'buy_trade_id': ['Buy_Trade_ID', 'ID Покупки'], 'sell_trade_id': ['Sell_Trade_ID', 'ID Продажи'], 'matched_qty': ['Matched_Qty', 'Сопоставленное Кол-во'],
     'buy_price': ['Buy_Price', 'Цена Покупки'], 'sell_price': ['Sell_Price', 'Цена Продажи'], 'fifo_pnl': ['Fifo_PNL', 'PNL FIFO'],
     'timestamp_closed': ['Timestamp_Closed', 'Время Закрытия'], 'buy_timestamp': ['Buy_Timestamp', 'Время Покупки'],
@@ -39,9 +39,7 @@ FIELD_TO_SHEET_NAMES_MAP: dict[str, List[str]] = {
 
 # --- Управление кэшем и клиентом ---
 def invalidate_cache(sheet_name: Optional[str] = None):
-    """
-    [ИЗМЕНЕНО] Очищает кэш заголовков и, при необходимости, сбрасывает gspread клиент.
-    """
+    """Очищает кэш заголовков и, при необходимости, сбрасывает gspread клиент."""
     global _header_cache, _gspread_client
     if sheet_name:
         if sheet_name in _header_cache:
@@ -49,7 +47,7 @@ def invalidate_cache(sheet_name: Optional[str] = None):
             logger.info(f"[CACHE] Кэш заголовков для листа '{sheet_name}' очищен.")
     else:
         _header_cache = {}
-        _gspread_client = None # <--- ВОЗВРАЩЕНА ЭТА СТРОКА
+        _gspread_client = None
         logger.info("[CACHE] Весь кэш gspread и заголовков очищен. Соединение будет переустановлено.")
 
 def _get_client() -> gspread.Client:
@@ -322,3 +320,19 @@ def add_trade(trade_data: TradeData) -> bool: return append_record(config.CORE_T
 def add_movement(movement_data: MovementData) -> bool: return append_record(config.FUND_MOVEMENTS_SHEET_NAME, movement_data)
 def add_position(position_data: PositionData) -> bool: return append_record(config.OPEN_POSITIONS_SHEET_NAME, position_data)
 def add_analytics_record(analytics_data: AnalyticsData) -> bool: return append_record(config.ANALYTICS_SHEET_NAME, analytics_data)
+
+# --- Публичные функции чтения для совместимости ---
+def get_all_open_positions() -> List[PositionData]:
+    records, errors = get_all_records(config.OPEN_POSITIONS_SHEET_NAME, PositionData)
+    if errors: logger.error(f"Ошибки при чтении Open_Positions: {errors}")
+    return records
+
+def get_all_balances() -> List[BalanceData]:
+    records, errors = get_all_records(config.ACCOUNT_BALANCES_SHEET_NAME, BalanceData)
+    if errors: logger.error(f"Ошибки при чтении Account_Balances: {errors}")
+    return records
+
+def get_all_core_trades() -> List[TradeData]:
+    records, errors = get_all_records(config.CORE_TRADES_SHEET_NAME, TradeData)
+    if errors: logger.error(f"Ошибки при чтении Core_Trades: {errors}")
+    return records
