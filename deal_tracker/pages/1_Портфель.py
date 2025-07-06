@@ -1,4 +1,4 @@
-# pages/1_Портфель.py
+# deal_tracker/pages/1_Портфель.py
 import streamlit as st
 import pandas as pd
 from decimal import Decimal
@@ -56,7 +56,7 @@ with st.sidebar:
 # --- ОСНОВНАЯ ЛОГИКА ---
 portfolio_components = []
 
-# 1. Обработка открытых позиций
+# 1. Обработка открытых позиций (криптовалют)
 for pos in positions_data:
     if not pos.symbol or not pos.net_amount or not pos.exchange or not pos.avg_entry_price:
         continue
@@ -64,17 +64,18 @@ for pos in positions_data:
     location = pos.exchange.capitalize()
     
     price = current_prices.get(pos.exchange.lower(), {}).get(pos.symbol, Decimal('0'))
-    if pos.net_amount > 0 and price > 0:
+    if pos.net_amount > 0:
         portfolio_components.append({
             'asset': base_asset,
             'quantity': pos.net_amount,
             'value_usd': pos.net_amount * price,
             'location': location,
             'current_price': price,
-            'avg_entry_price': pos.avg_entry_price
+            'avg_entry_price': pos.avg_entry_price,
+            'purchase_value': pos.net_amount * pos.avg_entry_price # Стоимость покупки
         })
 
-# 2. Обработка стейблкоинов
+# 2. Обработка стейблкоинов и других балансов
 for balance in account_balances_data:
     if not balance.account_name or not balance.asset or not balance.balance:
         continue
@@ -87,7 +88,8 @@ for balance in account_balances_data:
             'value_usd': balance.balance,
             'location': location,
             'current_price': Decimal('1.0'),
-            'avg_entry_price': Decimal('1.0')
+            'avg_entry_price': Decimal('1.0'),
+            'purchase_value': balance.balance # Для стейблов стоимость покупки равна их количеству
         })
 
 # --- ФИЛЬТРАЦИЯ ДАННЫХ ПОРТФЕЛЯ ---
@@ -99,7 +101,6 @@ if portfolio_components:
         df_portfolio = df_portfolio[df_portfolio['asset'].isin(selected_assets)]
 else:
     df_portfolio = pd.DataFrame()
-
 
 # --- ОТОБРАЖЕНИЕ ---
 if df_portfolio.empty:
@@ -126,49 +127,54 @@ else:
     # Таблица с детализацией
     st.markdown(f"#### {t('asset_details_header')}")
     
-    # Группируем, суммируя стоимость и количество
-    df_details_grouped = df_portfolio.groupby(['location', 'asset']).agg(
-        quantity=('quantity', 'sum'),
-        value_usd=('value_usd', 'sum')
-    ).reset_index()
-    
-    # Считаем средневзвешенную цену входа
+    # 1. Группируем данные и считаем средневзвешенную цену
     df_portfolio['entry_value'] = df_portfolio['avg_entry_price'] * df_portfolio['quantity']
-    avg_price_grouped = df_portfolio.groupby(['location', 'asset']).agg(
-        total_entry_value=('entry_value', 'sum'),
-        total_quantity=('quantity', 'sum')
+    df_details = df_portfolio.groupby(['location', 'asset']).agg(
+        quantity=('quantity', 'sum'),
+        value_usd=('value_usd', 'sum'),
+        purchase_value=('purchase_value', 'sum'),
+        total_entry_value=('entry_value', 'sum')
     ).reset_index()
-    # Избегаем деления на ноль
-    avg_price_grouped['avg_entry_price'] = avg_price_grouped.apply(
-        lambda row: row['total_entry_value'] / row['total_quantity'] if row['total_quantity'] > 0 else 0,
-        axis=1
-    )
     
-    # Объединяем данные
-    df_details = pd.merge(df_details_grouped, avg_price_grouped[['location', 'asset', 'avg_entry_price']], on=['location', 'asset'], how='left')
-
+    df_details['avg_entry_price'] = df_details.apply(
+        lambda row: row['total_entry_value'] / row['quantity'] if row['quantity'] > 0 else 0, axis=1)
+    
+    # 2. Добавляем текущие цены и рассчитываем новые показатели
     price_map = df_portfolio.groupby('asset')['current_price'].first()
-    df_details['current_price'] = df_details['asset'].map(price_map)
+    df_details['current_price'] = df_details['asset'].map(price_map).fillna(0)
+    
+    df_details['price_change_pct'] = df_details.apply(
+        lambda row: ((row['current_price'] / row['avg_entry_price']) - 1) * 100 if row['avg_entry_price'] > 0 else 0, axis=1)
+    
     df_details['share'] = (df_details['value_usd'] / total_portfolio_value * 100) if total_portfolio_value > 0 else Decimal('0')
+    
     df_sorted = df_details.sort_values(by='value_usd', ascending=False)
     
-    # Форматируем для вывода
+    # 3. Форматируем DataFrame для вывода
     df_display = pd.DataFrame()
     df_display[t('col_asset')] = df_sorted['asset']
     df_display[t('col_location')] = df_sorted['location']
     df_display[t('col_qty')] = df_sorted.apply(lambda r: dashboard_utils.format_number(r['quantity'], dashboard_utils.get_precision_for_asset(r['asset'])), axis=1)
-    
-    # [ИСПРАВЛЕНО] Применяем новую, правильную функцию для форматирования цен
     df_display[t('col_avg_entry')] = df_sorted.apply(lambda r: dashboard_utils.format_number(r['avg_entry_price'], dashboard_utils.get_price_precision(r['asset'])), axis=1)
+    # [НОВАЯ КОЛОНКА]
+    df_display[t('col_purchase_value')] = df_sorted['purchase_value'].apply(lambda x: dashboard_utils.format_number(x, currency_symbol=display_currency))
     df_display[t('col_current_price')] = df_sorted.apply(lambda r: dashboard_utils.format_number(r['current_price'], dashboard_utils.get_price_precision(r['asset'])), axis=1)
-    
+    # [НОВАЯ КОЛОНКА]
+    df_display[t('col_price_change_pct')] = df_sorted['price_change_pct'].apply(lambda x: dashboard_utils.format_number(x, add_plus_sign=True, precision_str="0.01") + "%")
     df_display[t('col_value')] = df_sorted['value_usd'].apply(lambda x: dashboard_utils.format_number(x, currency_symbol=display_currency))
     df_display[t('col_share_percent')] = df_sorted['share'].apply(lambda x: f"{dashboard_utils.format_number(x)}%")
     
-    # Задаем порядок колонок
+    # 4. Задаем порядок колонок и применяем стили
     column_order = [
         t('col_asset'), t('col_location'), t('col_qty'), 
-        t('col_avg_entry'), t('col_current_price'), t('col_value'), t('col_share_percent')
+        t('col_avg_entry'), t('col_purchase_value'), t('col_current_price'), 
+        t('col_price_change_pct'), t('col_value'), t('col_share_percent')
     ]
     
-    st.dataframe(df_display[column_order], hide_index=True, use_container_width=True)
+    styler = df_display[column_order].style.applymap(
+        dashboard_utils.style_pnl_value, 
+        subset=[t('col_price_change_pct')]
+    )
+    
+    # [ВОССТАНОВЛЕНО] Используем стандартный st.dataframe
+    st.dataframe(styler, hide_index=True, use_container_width=True)

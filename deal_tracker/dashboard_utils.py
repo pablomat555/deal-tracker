@@ -82,38 +82,33 @@ def load_all_data_with_error_handling() -> tuple[Dict[str, List[Any]], List[str]
 
 
 @st.cache_data(ttl=60)
-def fetch_current_prices_for_all_exchanges(positions: List[PositionData]) -> dict:
-    """Получает актуальные цены для всех позиций с соответствующих бирж."""
+def fetch_current_prices_for_all_exchanges(positions: List[PositionData]) -> Dict[str, Dict[str, Decimal]]:
+    """
+    [ИСПРАВЛЕНО] Загружает актуальные цены для всех позиций,
+    используя нечувствительный к регистру подход.
+    """
     if not positions:
         return {}
-        
+
     symbols_by_exchange = defaultdict(list)
     for pos in positions:
-        exchange_id = (pos.exchange or '').lower()
-        symbol = pos.symbol
-        if exchange_id and symbol:
-            symbols_by_exchange[exchange_id].append(symbol)
-            
+        if pos.exchange and pos.symbol:
+            # Приводим к нижнему регистру
+            symbols_by_exchange[pos.exchange.lower()].append(pos.symbol)
+
     all_prices = defaultdict(dict)
     for exchange_id, symbols in symbols_by_exchange.items():
         try:
-            exchange_class = getattr(ccxt, exchange_id, None)
-            if not exchange_class:
-                logger.warning(f"Биржа {exchange_id} не найдена в CCXT.")
-                continue
-            
+            exchange_class = getattr(ccxt, exchange_id)
             exchange = exchange_class()
             tickers = exchange.fetch_tickers(list(set(symbols)))
-            
-            for symbol, ticker in tickers.items():
-                if ticker and ticker.get('last') is not None:
-                    all_prices[exchange_id][symbol] = Decimal(
-                        str(ticker['last']))
-        except Exception as e:
-            logger.error(
-                f"Не удалось получить цены с биржи {exchange_id}: {e}")
+            for symbol, data in tickers.items():
+                if data and 'last' in data:
+                    # Ключ - exchange_id в нижнем регистре
+                    all_prices[exchange_id][symbol] = Decimal(str(data['last']))
+        except (ccxt.ExchangeNotFound, ccxt.NetworkError, ccxt.ExchangeError) as e:
+            logger.warning(f"Не удалось получить цены для биржи {exchange_id}: {e}")
             continue
-            
     return dict(all_prices)
 
 

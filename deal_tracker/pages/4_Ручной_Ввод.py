@@ -59,7 +59,10 @@ def get_current_time_in_user_tz() -> datetime:
     return datetime.now(timezone.utc).astimezone(target_timezone)
 
 def display_manual_trade_form():
-    """Отображает форму для ручного ввода сделки со всеми полями."""
+    """
+    [ИСПРАВЛЕНО] Отображает форму для ручного ввода сделки, 
+    объединяя поля SL/TP и комиссии.
+    """
     st.subheader("📈 " + t("add_trade_subheader"))
     with st.form(key="manual_trade_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
@@ -75,14 +78,25 @@ def display_manual_trade_form():
             trade_date = st.date_input(t("col_date"), value=now_in_user_tz)
             trade_time = st.time_input(t("col_time"), value=now_in_user_tz.time())
 
-        with st.expander(t("sl_tp_expander")):
+        # --- [ОБЪЕДИНЕННЫЙ БЛОК] Все дополнительные параметры ---
+        with st.expander(t("optional_params_expander")):
+            # Поля для Stop Loss и Take Profit
+            st.markdown("##### Stop Loss / Take Profit")
             scol1, scol2, scol3, scol4 = st.columns(4)
-            sl_str = scol1.text_input("Stop Loss (SL)")
-            tp1_str = scol2.text_input("Take Profit 1 (TP1)")
-            tp2_str = scol3.text_input("Take Profit 2 (TP2)")
-            tp3_str = scol4.text_input("Take Profit 3 (TP3)")
-        
-        notes = st.text_area(t("col_notes"))
+            sl_str = scol1.text_input(t("col_sl"))
+            tp1_str = scol2.text_input(t("col_tp1"))
+            tp2_str = scol3.text_input(t("col_tp2"))
+            tp3_str = scol4.text_input(t("col_tp3"))
+            
+            st.divider()
+            
+            # Поля для комиссии и заметок
+            st.markdown("##### Комиссия и заметки")
+            ccol1, ccol2 = st.columns(2)
+            commission_str = ccol1.text_input(t("col_commission"))
+            commission_asset_str = ccol2.text_input(t("col_commission_asset"), value=symbol.split('/')[-1] if '/' in symbol else config.BASE_CURRENCY)
+            notes = st.text_area(t("col_notes"))
+
         submitted = st.form_submit_button(t("add_trade_button"))
 
         if submitted:
@@ -93,13 +107,17 @@ def display_manual_trade_form():
             
             timestamp = datetime.combine(trade_date, trade_time).replace(tzinfo=now_in_user_tz.tzinfo)
             
+            # [ИСПРАВЛЕНО] Собираем ВСЕ опциональные поля в kwargs
             kwargs = {
                 'notes': notes if notes else None,
                 'sl': utils.parse_decimal(sl_str),
                 'tp1': utils.parse_decimal(tp1_str),
                 'tp2': utils.parse_decimal(tp2_str),
                 'tp3': utils.parse_decimal(tp3_str),
+                'commission': utils.parse_decimal(commission_str),
+                'commission_asset': commission_asset_str if utils.parse_decimal(commission_str) else None
             }
+            # Очищаем kwargs от всех пустых значений
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
             with st.spinner(t("processing")):
@@ -111,6 +129,7 @@ def display_manual_trade_form():
                 st.success(t("success_trade_added") + f" ID: {msg}"); st.balloons(); time.sleep(2); st.rerun()
             else:
                 st.error(f"❌ {t('error_generic')}: {msg}")
+
 
 def display_manual_movement_forms():
     """Отображает формы для ввода/вывода/перевода средств."""

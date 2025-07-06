@@ -1,3 +1,4 @@
+# locales.py
 import streamlit as st
 import config
 
@@ -9,6 +10,12 @@ TRANSLATIONS = {
     'ru': {
         # --- [НОВОЕ] Ключ для переключателя языка ---
         'language_selector_label': "🌐 Язык / Language",
+
+        # --- [НОВЫЕ ПЕРЕВОДЫ] ---
+        'optional_params_expander': "Дополнительные параметры (комиссия, заметки)",
+        'col_commission_asset': "Валюта комиссии",
+        'col_purchase_value': "Сумма покупки, $",
+        'col_price_change_pct': "Рост/Падение, %",
 
         # --- Существующие ключи ---
         'app_title': "Финансовый Дэшборд",
@@ -190,6 +197,12 @@ TRANSLATIONS = {
         # --- [NEW] Key for the language selector ---
         'language_selector_label': "🌐 Language / Язык",
 
+        # --- [NEW TRANSLATIONS] ---
+        'optional_params_expander': "Optional Parameters (Fee, Notes)",
+        'col_commission_asset': "Fee Asset",
+        'col_purchase_value': "Purchase Value, $",
+        'col_price_change_pct': "Price Change, %",
+
         # --- Existing keys ---
         'app_title': "Financial Dashboard",
         'update_button': "🔄 Refresh",
@@ -280,7 +293,7 @@ TRANSLATIONS = {
         'col_sell_price': "Sell Price",
         'col_pnl_fifo': f"Profit, {config.BASE_CURRENCY}",
         'col_buy_id': "Buy ID",
-        'col_sell_id': "Sell ID",
+        'col_sell__id': "Sell ID",
         'col_order_id': "Order ID",
         'col_commission': "Fee",
         'col_fee_asset': "Fee Asset",

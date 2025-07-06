@@ -23,11 +23,13 @@ def fetch_all_prices(positions: List[PositionData]) -> Dict[str, Dict[str, Decim
     symbols_by_exchange = defaultdict(list)
     for pos in positions:
         if pos.exchange and pos.symbol:
+            # [ИСПРАВЛЕНО] Приводим к нижнему регистру СРАЗУ
             symbols_by_exchange[pos.exchange.lower()].append(pos.symbol)
 
     all_prices = defaultdict(dict)
     for exchange_id, symbols in symbols_by_exchange.items():
         try:
+            # exchange_id уже в нижнем регистре
             exchange_class = getattr(ccxt, exchange_id, None)
             if not exchange_class:
                 logger.warning(f"Биржа {exchange_id} не найдена в CCXT.")
@@ -38,6 +40,7 @@ def fetch_all_prices(positions: List[PositionData]) -> Dict[str, Dict[str, Decim
             
             for symbol, ticker in tickers.items():
                 if ticker and ticker.get('last') is not None:
+                    # Ключ - exchange_id в нижнем регистре
                     all_prices[exchange_id][symbol] = Decimal(str(ticker['last']))
         except Exception as e:
             logger.error(f"Не удалось получить цены с биржи {exchange_id}: {e}")
@@ -64,6 +67,7 @@ def update_prices_and_pnl() -> Tuple[bool, str]:
     positions_to_update = []
     
     for pos in open_positions:
+        # [ИСПРАВЛЕНО] Также приводим к нижнему регистру при поиске цены
         price = current_prices.get(pos.exchange.lower(), {}).get(pos.symbol)
         if price:
             pos.current_price = price

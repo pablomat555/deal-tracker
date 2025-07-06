@@ -1,3 +1,4 @@
+# dashboard.py
 import streamlit as st
 import pandas as pd
 import logging
@@ -129,7 +130,14 @@ def display_open_lots_table(core_trades: List[TradeData], current_prices: dict, 
     df_lots['current_price'] = df_lots.apply(get_price, axis=1)
     df_lots['pnl_usd'] = (df_lots['current_price'] - df_lots['price']) * df_lots['unsold_qty']
     df_lots['risk_usd'] = df_lots.apply(lambda row: (row['price'] - row['sl']) * row['unsold_qty'] if pd.notna(row['sl']) and row['sl'] > 0 else None, axis=1)
-    
+    # [НОВЫЕ РАСЧЕТЫ]
+    df_lots['purchase_value'] = df_lots['price'] * df_lots['amount']
+    # Проверка, чтобы избежать деления на ноль, если цена покупки равна 0
+    df_lots['price_change_pct'] = df_lots.apply(
+        lambda row: ((row['current_price'] / row['price']) - 1) * 100 if row['price'] > 0 else Decimal('0'),
+        axis=1
+    )
+
     df_lots = df_lots.sort_values(by='timestamp', ascending=False)
     
     # Форматирование для вывода
@@ -138,9 +146,12 @@ def display_open_lots_table(core_trades: List[TradeData], current_prices: dict, 
     df_display[t('col_asset')] = df_lots['symbol']
     df_display[t('col_exchange')] = df_lots['exchange']
     df_display[t('col_qty_deal')] = df_lots['amount'].apply(lambda x: dashboard_utils.format_number(x, config.QTY_DISPLAY_PRECISION))
-    df_display[t('col_qty_left')] = df_lots['unsold_qty'].apply(lambda x: dashboard_utils.format_number(x, config.QTY_DISPLAY_PRECISION))
     df_display[t('col_buy_price')] = df_lots.apply(lambda r: dashboard_utils.format_number(r['price'], dashboard_utils.get_price_precision(r['symbol'])), axis=1)
+    # [НОВАЯ КОЛОНКА] Сумма покупки
+    df_display[t('col_purchase_value')] = df_lots['purchase_value'].apply(lambda x: dashboard_utils.format_number(x, currency_symbol=display_currency))
     df_display[t('col_current_price')] = df_lots.apply(lambda r: dashboard_utils.format_number(r['current_price'], dashboard_utils.get_price_precision(r['symbol'])), axis=1)
+    # [НОВАЯ КОЛОНКА] Изменение цены в %
+    df_display[t('col_price_change_pct')] = df_lots['price_change_pct'].apply(lambda x: dashboard_utils.format_number(x, add_plus_sign=True, precision_str="0.01") + "%")
     df_display[t('col_pnl_sum')] = df_lots['pnl_usd'].apply(lambda x: dashboard_utils.format_number(x, add_plus_sign=True, currency_symbol=display_currency))
     
     final_cols = list(df_display.columns)
@@ -162,7 +173,8 @@ def display_open_lots_table(core_trades: List[TradeData], current_prices: dict, 
     styler = df_display[final_cols].style
     
     styles_to_apply = {
-        style_pnl: [t('col_pnl_sum')],
+        # [ИЗМЕНЕНО] Добавлена новая колонка для подсветки
+        style_pnl: [t('col_pnl_sum'), t('col_price_change_pct')],
         style_sl: [t('col_sl')],
         style_tp: [t('col_tp1'), t('col_tp2'), t('col_tp3')],
         style_risk: [t('col_risk_usd')]
@@ -220,7 +232,8 @@ core_trades_df = pd.DataFrame([t.__dict__ for t in core_trades_data]) if core_tr
 closed_trades_df = pd.DataFrame([t.__dict__ for t in closed_trades_data]) if closed_trades_data else pd.DataFrame(columns=['symbol', 'exchange'])
 selected_exchanges, selected_symbols = setup_filters(core_trades_df, closed_trades_df)
 
-current_prices = dashboard_utils.fetch_current_prices_for_all_exchanges(positions_data)
+# [ИСПРАВЛЕНО] Запрашиваем цены на основе всех сделок, а не только агрегированных позиций.
+current_prices = dashboard_utils.fetch_current_prices_for_all_exchanges(core_trades_data)
 
 positions_df = pd.DataFrame([p.__dict__ for p in positions_data]) if positions_data else pd.DataFrame(columns=['symbol', 'exchange'])
 total_crypto_value = Decimal('0')
@@ -269,23 +282,24 @@ if analytics_data:
     else: # 'year'
         target_date = now - timedelta(days=365)
 
-    closest_record = min(
-        analytics_data, 
-        key=lambda x: abs(pd.to_datetime(x.date_generated).replace(tzinfo=None) - target_date.replace(tzinfo=None))
-    )
-    
-    previous_equity = Decimal(closest_record.total_equity)
-    
-    if previous_equity > 0:
-        delta_percent = ((live_total_equity / previous_equity) - 1) * 100
+    if analytics_data:
+        closest_record = min(
+            analytics_data, 
+            key=lambda x: abs(pd.to_datetime(x.date_generated).replace(tzinfo=None) - target_date.replace(tzinfo=None))
+        )
         
-        # Используем ключ для перевода строки формата
-        # Получаем переведенное название периода для отображения
-        translated_period = period_options[time_period_key]
-        # Получаем строку формата из перевода
-        format_string = t('delta_format_string') # Пример в locales/ru.json: "delta_format_string": "{value:+.2f}% / {period}"
-        # Собираем финальную строку
-        equity_delta_str = format_string.format(value=delta_percent, period=translated_period.lower())
+        previous_equity = Decimal(closest_record.total_equity)
+        
+        if previous_equity > 0:
+            delta_percent = ((live_total_equity / previous_equity) - 1) * 100
+            
+            # Используем ключ для перевода строки формата
+            # Получаем переведенное название периода для отображения
+            translated_period = period_options[time_period_key]
+            # Получаем строку формата из перевода
+            format_string = t('delta_format_string') # Пример в locales/ru.json: "delta_format_string": "{value:+.2f}% / {period}"
+            # Собираем финальную строку
+            equity_delta_str = format_string.format(value=delta_percent, period=translated_period.lower())
 
 latest_analytics_obj = analytics_data[-1] if analytics_data else None
 if latest_analytics_obj:
