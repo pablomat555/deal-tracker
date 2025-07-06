@@ -3,132 +3,168 @@ import streamlit as st
 import logging
 import time
 from decimal import Decimal
-from datetime import datetime
-
+from datetime import datetime, time as dt_time, timezone, timedelta
 import os
 import sys
 
 # --- Настройка путей и импортов ---
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Теперь импорты должны работать надежно
 from deal_tracker.locales import t
 from deal_tracker import config
-# Прямые импорты из trade_logger не нужны, если есть utils
+from deal_tracker.trade_logger import log_trade, log_fund_movement
 from deal_tracker import utils
-from deal_tracker import sheets_service # Импортируем напрямую для записи
+from deal_tracker import sheets_service
 
-# --- НАСТРОЙКА СТРАНИЦЫ И ЛОГГЕР ---
-st.set_page_config(layout="wide", page_title="Ручной Ввод")
-logger = logging.getLogger(__name__)
+# --- НАСТРОЙКА СТРАНИЦЫ ---
+st.set_page_config(layout="wide", page_title=t("page_manual_entry_title"))
+st.title("📝 " + t("page_manual_entry_header"))
 
-# --- 1. ОПРЕДЕЛЕНИЕ ВСЕХ ФУНКЦИЙ ---
+# --- ОБЩИЕ ВИДЖЕТЫ В БОКОВОЙ ПАНЕЛИ ---
+with st.sidebar:
+    lang_options = ["ru", "en"]
+    current_lang = st.session_state.get("lang", "ru")
+    lang_index = lang_options.index(current_lang) if current_lang in lang_options else 0
+    lang = st.radio(
+        "🌐 Язык / Language",
+        options=lang_options,
+        index=lang_index,
+        key='lang_radio_manual_entry' # Уникальный ключ для этой страницы
+    )
+    st.session_state["lang"] = lang
+    st.divider()
+    
+    st.number_input(
+        label=t('timezone_setting_label'),
+        min_value=-12, max_value=14,
+        value=st.session_state.get('tz_offset', config.TZ_OFFSET_HOURS),
+        key='tz_offset',
+        help=t('timezone_setting_help')
+    )
+    
+    st.divider()
+    if st.button(t('update_button'), key="manual_entry_refresh"):
+        st.cache_data.clear()
+        sheets_service.invalidate_cache()
+        st.rerun()
+
+# --- ОСНОВНЫЕ ФУНКЦИИ ---
+
+def get_current_time_in_user_tz() -> datetime:
+    """Возвращает текущее время в выбранной пользователем временной зоне."""
+    user_tz_offset = st.session_state.get('tz_offset', config.TZ_OFFSET_HOURS)
+    target_timezone = timezone(timedelta(hours=user_tz_offset))
+    return datetime.now(timezone.utc).astimezone(target_timezone)
 
 def display_manual_trade_form():
-    """Отображает форму для ручного ввода сделки."""
-    st.subheader("📈 " + t("Добавить сделку"))
+    """Отображает форму для ручного ввода сделки со всеми полями."""
+    st.subheader("📈 " + t("add_trade_subheader"))
     with st.form(key="manual_trade_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
+        now_in_user_tz = get_current_time_in_user_tz()
         with col1:
-            trade_type = st.radio(t("Тип сделки"), ["BUY", "SELL"], horizontal=True)
-            symbol = st.text_input(t("Символ (напр., BTC/USDT)"), "").upper()
-            exchange = st.selectbox(t("Биржа"), config.KNOWN_EXCHANGES)
+            trade_type = st.radio(t("col_type"), ["BUY", "SELL"], horizontal=True)
+            symbol = st.text_input(t("col_symbol_placeholder"), "").upper()
+            exchange = st.selectbox(t("col_exchange"), config.KNOWN_EXCHANGES)
         with col2:
-            amount_str = st.text_input(t("Количество"))
-            price_str = st.text_input(t("Цена"))
+            amount_str = st.text_input(t("col_qty"))
+            price_str = st.text_input(t("col_price"))
         with col3:
-            date_str = st.text_input(t("Дата и время (ГГГГ-ММ-ДД ЧЧ:ММ)"), placeholder=t("Пусто = текущее время"))
+            trade_date = st.date_input(t("col_date"), value=now_in_user_tz)
+            trade_time = st.time_input(t("col_time"), value=now_in_user_tz.time())
 
-        notes = st.text_area(t("Заметки (опционально)"))
+        with st.expander(t("sl_tp_expander")):
+            scol1, scol2, scol3, scol4 = st.columns(4)
+            sl_str = scol1.text_input("Stop Loss (SL)")
+            tp1_str = scol2.text_input("Take Profit 1 (TP1)")
+            tp2_str = scol3.text_input("Take Profit 2 (TP2)")
+            tp3_str = scol4.text_input("Take Profit 3 (TP3)")
         
-        submitted = st.form_submit_button(t("Добавить сделку"))
+        notes = st.text_area(t("col_notes"))
+        submitted = st.form_submit_button(t("add_trade_button"))
+
         if submitted:
             amount_dec = utils.parse_decimal(amount_str)
             price_dec = utils.parse_decimal(price_str)
-
             if not all([symbol, amount_dec, price_dec]) or amount_dec <= 0 or price_dec <= 0:
-                st.error(t("Поля 'Символ', 'Количество' и 'Цена' обязательны и должны быть > 0."))
-                return
-
-            timestamp = utils.parse_datetime_from_args({'date': date_str} if date_str else {})
-
-            with st.spinner(t("Обработка...")):
-                # Используем utils для создания объекта и sheets_service для записи
-                trade_data_obj = utils.create_trade_data_from_raw(
-                    trade_type=trade_type, exchange=exchange, symbol=symbol,
-                    amount=amount_dec, price=price_dec, timestamp=timestamp, notes=notes
-                )
-                success = sheets_service.add_trade(trade_data_obj)
-                msg = trade_data_obj.trade_id if success else "Ошибка записи в Google Sheets"
+                st.error(t("error_fields_required")); return
             
-            if success:
-                st.success(t("✅ Сделка добавлена! ID:") + f" {msg}"); st.balloons(); time.sleep(2); st.rerun()
-            else:
-                st.error(f"❌ {t('Ошибка')}: {msg}")
+            timestamp = datetime.combine(trade_date, trade_time).replace(tzinfo=now_in_user_tz.tzinfo)
+            
+            kwargs = {
+                'notes': notes if notes else None,
+                'sl': utils.parse_decimal(sl_str),
+                'tp1': utils.parse_decimal(tp1_str),
+                'tp2': utils.parse_decimal(tp2_str),
+                'tp3': utils.parse_decimal(tp3_str),
+            }
+            kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
+            with st.spinner(t("processing")):
+                success, msg = log_trade(
+                    trade_type=trade_type, exchange=exchange, symbol=symbol,
+                    amount=amount_dec, price=price_dec, timestamp=timestamp, **kwargs
+                )
+            if success:
+                st.success(t("success_trade_added") + f" ID: {msg}"); st.balloons(); time.sleep(2); st.rerun()
+            else:
+                st.error(f"❌ {t('error_generic')}: {msg}")
 
 def display_manual_movement_forms():
     """Отображает формы для ввода/вывода/перевода средств."""
-    st.subheader("💸 " + t("Добавить движение средств"))
-    
-    movement_type = st.selectbox(t("Тип операции"), ["DEPOSIT", "WITHDRAWAL", "TRANSFER"])
+    st.subheader("💸 " + t("add_movement_subheader"))
+    movement_type = st.selectbox(t("col_type"), ["DEPOSIT", "WITHDRAWAL", "TRANSFER"])
 
-    def handle_submission(m_type, asset, amount_str, source, dest, date_str, notes):
+    def handle_submission(m_type, asset, amount_str, source, dest, date, time_val, notes):
         amount = utils.parse_decimal(amount_str)
         if not all([asset, amount]) or amount <= 0:
-            st.error(t("Поля 'Актив' и 'Сумма' обязательны и должны быть > 0."))
-            return
+            st.error(t("error_asset_amount_required")); return
 
-        timestamp = utils.parse_datetime_from_args({'date': date_str} if date_str else {})
+        now_in_user_tz = get_current_time_in_user_tz()
+        timestamp = datetime.combine(date, time_val).replace(tzinfo=now_in_user_tz.tzinfo)
+        kwargs = {'notes': notes}
 
-        with st.spinner(t("Обработка...")):
-            # Используем utils для создания объекта и sheets_service для записи
-            movement_data_obj = utils.create_movement_data_from_raw(
+        with st.spinner(t("processing")):
+            success, msg = log_fund_movement(
                 movement_type=m_type, asset=asset, amount=amount, timestamp=timestamp,
-                source_name=source, destination_name=dest, notes=notes
+                source_name=source, destination_name=dest, **kwargs
             )
-            success = sheets_service.add_movement(movement_data_obj)
-            msg = movement_data_obj.movement_id if success else "Ошибка записи в Google Sheets"
-        
         if success:
-            st.success(t("✅ Операция '{m_type}' успешно добавлена! ID:").format(m_type=m_type) + f" {msg}")
-            st.balloons()
-            time.sleep(2)
-            st.rerun()
+            st.success(t("success_movement_added").format(m_type=m_type) + f" ID: {msg}"); st.balloons(); time.sleep(2); st.rerun()
         else:
-            st.error(f"❌ {t('Ошибка')}: {msg}")
+            st.error(f"❌ {t('error_generic')}: {msg}")
 
     with st.form(key=f"{movement_type}_form", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
-        asset = col1.text_input(t("Актив (напр., USDT)"), key=f"asset_{movement_type}").upper()
-        amount_str = col2.text_input(t("Сумма"), key=f"amount_{movement_type}")
-        date_str = col3.text_input(t("Дата и время (ГГГГ-ММ-ДД ЧЧ:ММ)"), placeholder=t("Пусто = текущее время"), key=f"date_{movement_type}")
-
+        col1, col2 = st.columns(2)
+        asset = col1.text_input(t("col_asset_placeholder"), key=f"asset_{movement_type}").upper()
+        amount_str = col2.text_input(t("col_amount"), key=f"amount_{movement_type}")
+        
         source, dest = None, None
         if movement_type == "DEPOSIT":
-            dest = st.selectbox(t("Счет назначения (КУДА)"), config.KNOWN_EXCHANGES + config.KNOWN_WALLETS, key="dest_dep")
+            dest = st.selectbox(t("col_destination_account"), config.KNOWN_EXCHANGES + config.KNOWN_WALLETS, key="dest_dep")
         elif movement_type == "WITHDRAWAL":
-            source = st.selectbox(t("Счет списания (ОТКУДА)"), config.KNOWN_EXCHANGES + config.KNOWN_WALLETS, key="source_with")
+            source = st.selectbox(t("col_source_account"), config.KNOWN_EXCHANGES + config.KNOWN_WALLETS, key="source_with")
         elif movement_type == "TRANSFER":
             c1, c2 = st.columns(2)
-            source = c1.selectbox(t("Счет списания (ОТКУДА)"), config.KNOWN_EXCHANGES + config.KNOWN_WALLETS, key="source_trans")
-            dest = c2.selectbox(t("Счет назначения (КУДА)"), config.KNOWN_EXCHANGES + config.KNOWN_WALLETS, key="dest_trans")
+            source = c1.selectbox(t("col_source_account"), config.KNOWN_EXCHANGES + config.KNOWN_WALLETS, key="source_trans")
+            dest = c2.selectbox(t("col_destination_account"), config.KNOWN_EXCHANGES + config.KNOWN_WALLETS, key="dest_trans")
 
-        notes = st.text_area(t("Заметки (опционально)"), key=f"notes_{movement_type}")
-        submitted = st.form_submit_button(t("Добавить") + f" {movement_type.lower()}")
+        col_date, col_time = st.columns(2)
+        now_in_user_tz = get_current_time_in_user_tz()
+        trade_date = col_date.date_input(t("col_date"), value=now_in_user_tz, key=f"date_{movement_type}")
+        trade_time = col_time.time_input(t("col_time"), value=now_in_user_tz.time(), key=f"time_{movement_type}")
+
+        notes = st.text_area(t("col_notes"), key=f"notes_{movement_type}")
+        submitted = st.form_submit_button(t("add_button") + f" {movement_type.lower()}")
         if submitted:
-            handle_submission(movement_type, asset, amount_str, source, dest, date_str, notes)
+            handle_submission(movement_type, asset, amount_str, source, dest, trade_date, trade_time, notes)
 
-# --- 2. ГЛАВНЫЙ КОД (ВЫЗЫВАЕТ ФУНКЦИИ ПОСЛЕ ИХ ОПРЕДЕЛЕНИЯ) ---
-st.title("📝 " + t("Ручной Ввод Данных"))
-st.caption(t("Эта страница предназначена для ручного добавления сделок и финансовых операций в систему."))
-
-tab_trade, tab_movement = st.tabs([t("📈 Сделки"), t("💸 Движения Средств")])
+# --- ГЛАВНЫЙ КОД ---
+tab_trade, tab_movement = st.tabs([t("tab_trades"), t("tab_movements")])
 
 with tab_trade:
-    # [ИСПРАВЛЕНО] Опечатка в названии функции
     display_manual_trade_form()
 
 with tab_movement:

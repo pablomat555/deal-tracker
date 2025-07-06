@@ -5,10 +5,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
-# [ИСПРАВЛЕНО] Явное указание пути к .env файлу
-# Это делает поиск .env файла более надежным, независимо от того, откуда запускается скрипт.
-# Path(__file__).parent -> папка /deal_tracker
-# .parent -> корневая папка проекта
+# Явное указание пути к .env файлу
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
@@ -30,11 +27,10 @@ TELEGRAM_ADMIN_IDS_STR = os.getenv('TELEGRAM_ADMIN_IDS_STR', TELEGRAM_CHAT_ID)
 # --- Настройки Google Sheets ---
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID', 'ВАШ_SPREADSHEET_ID')
 
-# Название переменной приведено в соответствие с sheets_service.py
+# Путь к файлу credentials.json
 GOOGLE_CREDS_JSON_PATH = '/root/secrets/credentials.json'
 
 # --- Имена листов в Google Sheets ---
-# Эти переменные теперь будут использоваться в sheets_service.py
 CORE_TRADES_SHEET_NAME = os.getenv('CORE_TRADES_SHEET_NAME', 'Core_Trades')
 OPEN_POSITIONS_SHEET_NAME = os.getenv(
     'OPEN_POSITIONS_SHEET_NAME', 'Open_Positions')
@@ -58,7 +54,8 @@ PRICE_PRECISION_STR_LOGGING = os.getenv(
 
 USD_DISPLAY_PRECISION = os.getenv('USD_DISPLAY_PRECISION', '0.01')
 QTY_DISPLAY_PRECISION = os.getenv('QTY_DISPLAY_PRECISION', '0.0001')
-PRICE_DISPLAY_PRECISION = os.getenv('PRICE_DISPLAY_PRECISION', '0.0001')
+# [ИСПРАВЛЕНО] Точность отображения цен по умолчанию теперь 2 знака
+PRICE_DISPLAY_PRECISION = os.getenv('PRICE_DISPLAY_PRECISION', '0.00')
 
 # --- Имена по умолчанию для команд /deposit и /withdraw ---
 DEFAULT_DEPOSIT_SOURCE_NAME = os.getenv(
@@ -74,19 +71,15 @@ DEFAULT_INTERNAL_ACCOUNT_TYPE = "INTERNAL_ACCOUNT"
 DEFAULT_DEPOSIT_WITHDRAW_ASSET = os.getenv(
     'DEFAULT_DEPOSIT_WITHDRAW_ASSET', BASE_CURRENCY)
 
-# --- Списки известных бирж и кошельков (РАСШИРЕННЫЕ СПИСКИ) ---
+# --- Списки известных бирж и кошельков ---
 KNOWN_EXCHANGES = [
-    # Основные
     "Binance", "Bybit", "OKX", "KuCoin", "HTX", "Huobi", "Gate.io", "Kraken",
     "Coinbase", "Bitfinex", "MEXC", "Bitget", "WhiteBIT", "EXMO",
-    # Для тестов
     "TestExch1", "TestExch2", "SomeExch"
 ]
 KNOWN_WALLETS = [
-    # Основные
     "MetaMask", "Trust Wallet", "Ledger", "Trezor", "Exodus", "Phantom",
     "Solflare", "MyEtherWallet", "Coinbase Wallet",
-    # Кастомные
     "MyWallet", "Мой кошелек 1", "Аппаратный кошелек"
 ]
 

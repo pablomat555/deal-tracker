@@ -103,7 +103,6 @@ def log_trade(
             required_quote += kwargs['commission']
         balance_obj = _find_balance(exchange_lower, quote_asset, all_balances)
 
-        # ИСПРАВЛЕНО: Используем адаптивный EPSILON
         epsilon = get_epsilon(quote_asset)
         if not balance_obj or balance_obj.balance is None or (balance_obj.balance + epsilon) < required_quote:
             current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
@@ -113,7 +112,6 @@ def log_trade(
     elif trade_type.upper() == 'SELL':
         balance_obj = _find_balance(exchange_lower, base_asset, all_balances)
 
-        # ИСПРАВЛЕНО: Используем адаптивный EPSILON
         epsilon = get_epsilon(base_asset)
         if not balance_obj or balance_obj.balance is None or (balance_obj.balance + epsilon) < amount:
             current_bal = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
@@ -127,12 +125,17 @@ def log_trade(
         if existing_pos and existing_pos.avg_entry_price:
             calculated_pnl = (price - existing_pos.avg_entry_price) * amount
 
-    # Формирование объекта сделки и изменений баланса
+    # [ИЗМЕНЕНО] Формирование объекта сделки с новыми полями
     trade = TradeData(
         trade_id=trade_id, timestamp=timestamp, exchange=exchange_lower, symbol=symbol.upper(),
         trade_type=trade_type.upper(), amount=amount, price=price, total_quote_amount=(amount * price),
         trade_pnl=calculated_pnl, notes=kwargs.get('notes'), commission=kwargs.get('commission'),
-        commission_asset=kwargs.get('commission_asset'), order_id=kwargs.get('order_id')
+        commission_asset=kwargs.get('commission_asset'), order_id=kwargs.get('order_id'),
+        # [НОВОЕ] Добавляем поля SL/TP из опциональных аргументов
+        sl=kwargs.get('sl'),
+        tp1=kwargs.get('tp1'),
+        tp2=kwargs.get('tp2'),
+        tp3=kwargs.get('tp3')
     )
     balance_changes = _calculate_balance_changes(
         trade, base_asset, quote_asset)
@@ -259,7 +262,6 @@ def log_fund_movement(
         current_balance = balance_obj.balance if balance_obj and balance_obj.balance is not None else Decimal(
             '0')
 
-        # ИСПРАВЛЕНО: Используем адаптивный EPSILON
         epsilon = get_epsilon(movement.asset)
         if (current_balance + epsilon) < movement.amount:
             return False, f"Недостаточно {movement.asset} на счете {movement.source_name}."

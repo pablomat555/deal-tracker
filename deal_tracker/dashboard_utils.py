@@ -60,7 +60,6 @@ def load_all_data_with_error_handling() -> tuple[Dict[str, List[Any]], List[str]
         config.OPEN_POSITIONS_SHEET_NAME: PositionData,
         config.FIFO_LOG_SHEET_NAME: FifoLogData,
         config.CORE_TRADES_SHEET_NAME: TradeData,
-        # [ДОБАВЛЕНО] Недостающие листы
         config.FUND_MOVEMENTS_SHEET_NAME: MovementData,
         config.ACCOUNT_BALANCES_SHEET_NAME: BalanceData,
     }
@@ -74,7 +73,6 @@ def load_all_data_with_error_handling() -> tuple[Dict[str, List[Any]], List[str]
         'open_positions': all_data_from_sheets.get(config.OPEN_POSITIONS_SHEET_NAME, []),
         'fifo_logs': all_data_from_sheets.get(config.FIFO_LOG_SHEET_NAME, []),
         'core_trades': all_data_from_sheets.get(config.CORE_TRADES_SHEET_NAME, []),
-        # [ДОБАВЛЕНО]
         'fund_movements': all_data_from_sheets.get(config.FUND_MOVEMENTS_SHEET_NAME, []),
         'account_balances': all_data_from_sheets.get(config.ACCOUNT_BALANCES_SHEET_NAME, []),
     }
@@ -147,7 +145,7 @@ def create_pie_chart(df: pd.DataFrame, title: str, names_col: str, values_col: s
 
 def get_precision_for_asset(asset_symbol: str) -> str:
     """
-    Возвращает строку точности для форматирования в зависимости от типа актива.
+    Возвращает строку точности для КОЛИЧЕСТВА в зависимости от типа актива.
     2 знака для стейблкоинов, больше - для остальных.
     """
     if asset_symbol.upper() in config.INVESTMENT_ASSETS:
@@ -155,3 +153,15 @@ def get_precision_for_asset(asset_symbol: str) -> str:
     else:
         # Используем стандартную точность из конфига для остальных активов
         return config.QTY_DISPLAY_PRECISION
+
+def get_price_precision(asset_symbol: str) -> str:
+    """
+    Возвращает строку точности для ЦЕНЫ в зависимости от типа актива.
+    2 знака для стейблкоинов, больше - для остальных.
+    """
+    # Для самого стейблкоина цена всегда 1.00.
+    if asset_symbol.upper() in config.INVESTMENT_ASSETS:
+        return '0.00' 
+    else:
+        # Для всех криптовалютных пар используем точность из конфига
+        return config.PRICE_DISPLAY_PRECISION

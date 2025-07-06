@@ -75,7 +75,7 @@ async def start_command(update: Update, context: CallbackContext) -> None:
         "--- <u>Торговля</u> ---\n"
         "<code>/buy SYMBOL QTY PRICE exch:NAME [ключи...]</code>\n"
         "<code>/sell SYMBOL QTY PRICE exch:NAME [ключи...]</code>\n"
-        "  <i>Опц. ключи: fee, fee_asset, notes, date, id</i>\n"
+        "  <i>Опц. ключи: fee, fee_asset, notes, date, id, sl, tp1, tp2, tp3</i>\n"
         "--- <u>Финансы</u> ---\n"
         "<code>/deposit ASSET AMOUNT dest_name:NAME [ключи...]</code>\n"
         "<code>/withdraw ASSET AMOUNT source_name:NAME [ключи...]</code>\n"
@@ -120,8 +120,15 @@ async def trade_command(update: Update, context: CallbackContext, trade_type: st
     kwargs = {
         'notes': named_args.get('notes'), 'order_id': named_args.get('id'),
         'commission': normalize_amount_string(named_args.get('fee')),
-        'commission_asset': named_args.get('fee_asset')
+        'commission_asset': named_args.get('fee_asset'),
+        'sl': normalize_amount_string(named_args.get('sl')),
+        'tp1': normalize_amount_string(named_args.get('tp1')),
+        'tp2': normalize_amount_string(named_args.get('tp2')),
+        'tp3': normalize_amount_string(named_args.get('tp3')),
     }
+    # Убираем пустые значения
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
     success, message = log_trade(
         trade_type=trade_type, exchange=exchange, symbol=symbol,
         amount=amount_dec, price=price_dec, timestamp=timestamp, **kwargs
@@ -173,6 +180,9 @@ async def movement_command(update: Update, context: CallbackContext, move_type: 
             await update.message.reply_text("Ошибка: для снятия укажите `source_name:ИМЯ`.", parse_mode=ParseMode.HTML)
             return
     elif move_type == 'TRANSFER':
+        if len(pos_args) < 4:
+            await update.message.reply_text("Ошибка: для transfer укажите <code>/transfer ASSET QTY FROM TO</code>.", parse_mode=ParseMode.HTML)
+            return
         kwargs['source_name'] = pos_args[2]
         kwargs['destination_name'] = pos_args[3]
 
@@ -244,13 +254,21 @@ async def history_command(update: Update, context: CallbackContext) -> None:
 
 @admin_only
 async def average_command(update: Update, context: CallbackContext) -> None:
+    """[ИСПРАВЛЕНО] Ищет позицию по точному совпадению или по базовому активу."""
     if not context.args:
         await update.message.reply_text("Использование: <code>/average SYMBOL</code>", parse_mode=ParseMode.HTML)
         return
+    
     symbol_to_find = context.args[0].upper()
     all_positions = sheets_service.get_all_open_positions()
+
+    # Умный поиск: ищет и точное совпадение (ETH/USDT), 
+    # и совпадение по базовому активу (ETH)
     position = next(
-        (p for p in all_positions if p.symbol and p.symbol.upper() == symbol_to_find), None)
+        (p for p in all_positions if p.symbol and (
+            p.symbol.upper() == symbol_to_find or 
+            p.symbol.upper().startswith(symbol_to_find + '/'))
+        ), None)
 
     if not position:
         await update.message.reply_text(f"Нет открытой позиции для {symbol_to_find}.")

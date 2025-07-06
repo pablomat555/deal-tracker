@@ -1,147 +1,107 @@
 # deal_tracker/price_updater_ccxt.py
-import asyncio
 import logging
-import os
-import datetime
+import time
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import List
-
-import ccxt.async_support as ccxt_async
-
-# Импортируем наши новые, чистые модули
+from typing import List, Dict, Tuple
+from collections import defaultdict
+import ccxt
 import sheets_service
 import config
 from models import PositionData
 
-# --- Настройка логгера ---
-# (Код настройки логгера остается без изменений, можно скопировать из вашей версии)
+# --- Настройка логирования ---
+logging.basicConfig(level=config.LOG_LEVEL, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-# --- Логика работы с CCXT ---
-ccxt_exchange_cache = {}
+def fetch_all_prices(positions: List[PositionData]) -> Dict[str, Dict[str, Decimal]]:
+    """Загружает актуальные цены для всех позиций, группируя по биржам."""
+    if not positions:
+        return {}
+        
+    symbols_by_exchange = defaultdict(list)
+    for pos in positions:
+        if pos.exchange and pos.symbol:
+            symbols_by_exchange[pos.exchange.lower()].append(pos.symbol)
 
-
-async def get_ccxt_exchange(exchange_name: str):
-    """Возвращает инициализированный экземпляр CCXT, используя кэш."""
-    if exchange_name in ccxt_exchange_cache:
-        return ccxt_exchange_cache[exchange_name]
-    try:
-        exchange_class = getattr(ccxt_async, exchange_name.lower())
-        exchange = exchange_class()
-        ccxt_exchange_cache[exchange_name] = exchange
-        logger.info(f"Инициализирован экземпляр CCXT для {exchange_name}")
-        return exchange
-    except AttributeError:
-        logger.error(f"Биржа {exchange_name} не найдена в CCXT.")
-        return None
-
-
-async def close_all_ccxt_exchanges():
-    """Закрывает все закэшированные сессии CCXT."""
-    for name, instance in ccxt_exchange_cache.items():
-        if hasattr(instance, 'close'):
-            await instance.close()
-            logger.info(f"CCXT сессия для {name} закрыта.")
-    ccxt_exchange_cache.clear()
-
-
-async def fetch_current_price(exchange_instance, symbol: str) -> Decimal | None:
-    """Получает текущую цену для символа с указанной биржи."""
-    if not exchange_instance:
-        return None
-    try:
-        ticker = await exchange_instance.fetch_ticker(symbol)
-        if ticker and 'last' in ticker and ticker['last'] is not None:
-            return Decimal(str(ticker['last']))
-        logger.warning(
-            f"Не удалось получить цену для {symbol} на {exchange_instance.id}.")
-    except Exception as e:
-        logger.error(
-            f"Ошибка CCXT для {symbol} на {exchange_instance.id}: {e}")
-    return None
-
-
-async def update_prices_and_pnl():
-    """Главная функция: получает позиции, запрашивает цены и обновляет PNL."""
-    logger.info("Запуск цикла обновления цен...")
-    update_successful = True
-
-    try:
-        # 1. Получаем список объектов PositionData
-        open_positions: List[PositionData] = sheets_service.get_all_open_positions(
-        )
-        if not open_positions:
-            logger.info("Нет открытых позиций для обновления.")
-            # Важно вернуть True, т.к. ошибки не было, просто нет работы
-            update_successful = True
-            return
-
-        updated_positions: List[PositionData] = []
-
-        for position in open_positions:
-            # 2. Работаем с чистыми данными из моделей
-            if not all([position.symbol, position.exchange, position.net_amount, position.avg_entry_price]):
-                logger.warning(
-                    f"Пропуск позиции с неполными данными: {position}")
+    all_prices = defaultdict(dict)
+    for exchange_id, symbols in symbols_by_exchange.items():
+        try:
+            exchange_class = getattr(ccxt, exchange_id, None)
+            if not exchange_class:
+                logger.warning(f"Биржа {exchange_id} не найдена в CCXT.")
                 continue
-
-            exchange_instance = await get_ccxt_exchange(position.exchange)
-            current_price = await fetch_current_price(exchange_instance, position.symbol)
-
-            if current_price is None:
-                continue
-
-            # 3. Рассчитываем PNL напрямую, без парсинга строк
-            unrealized_pnl = (
-                current_price - position.avg_entry_price) * position.net_amount
-
-            # 4. Обновляем сам объект модели
-            position.current_price = current_price
-            position.unrealized_pnl = unrealized_pnl
-            position.last_updated = datetime.datetime.now()
-
-            updated_positions.append(position)
-
-        # 5. Отправляем все обновленные объекты на пакетную запись
-        if updated_positions:
-            if not sheets_service.batch_update_positions(updated_positions):
-                update_successful = False
-                logger.error("Ошибка во время пакетного обновления позиций.")
-
-    except Exception as e:
-        logger.error(
-            f"Критическая ошибка в цикле обновления цен: {e}", exc_info=True)
-        update_successful = False
-    finally:
-        # 6. Обновляем статус с помощью новой, безопасной функции
-        timestamp = datetime.datetime.now(datetime.timezone.utc).astimezone(
-            datetime.timezone(datetime.timedelta(hours=config.TZ_OFFSET_HOURS))
-        )
-        status = "OK" if update_successful else "ERROR"
-
-        # --- ВОТ ЭТА СТРОКА БЫЛА ПРОПУЩЕНА ---
-        sheets_service.update_system_status(status, timestamp)
-        # ------------------------------------
+            
+            exchange = exchange_class()
+            tickers = exchange.fetch_tickers(list(set(symbols)))
+            
+            for symbol, ticker in tickers.items():
+                if ticker and ticker.get('last') is not None:
+                    all_prices[exchange_id][symbol] = Decimal(str(ticker['last']))
+        except Exception as e:
+            logger.error(f"Не удалось получить цены с биржи {exchange_id}: {e}")
+            continue
+            
+    return dict(all_prices)
 
 
-async def main_loop():
-    """Главный цикл, запускающий обновление цен с заданным интервалом."""
-    update_interval = config.PRICE_UPDATE_INTERVAL_SECONDS
-    logger.info(f"Price updater запущен. Интервал: {update_interval} секунд.")
+def update_prices_and_pnl() -> Tuple[bool, str]:
+    """
+    Основная функция: загружает позиции, обновляет цены и PNL.
+    Использует пакетную загрузку и пакетное обновление.
+    """
+    logger.info("Запуск обновления цен и PNL...")
+    
+    # Используем get_all_records, который является оберткой над batch_get_records
+    open_positions, errors = sheets_service.get_all_records(config.OPEN_POSITIONS_SHEET_NAME, PositionData)
+    if errors:
+        return False, f"Ошибка чтения позиций: {errors}"
+    if not open_positions:
+        return True, "Нет открытых позиций для обновления."
 
+    current_prices = fetch_all_prices(open_positions)
+    positions_to_update = []
+    
+    for pos in open_positions:
+        price = current_prices.get(pos.exchange.lower(), {}).get(pos.symbol)
+        if price:
+            pos.current_price = price
+            pos.unrealized_pnl = (price - pos.avg_entry_price) * pos.net_amount
+            pos.last_updated = datetime.now()
+            positions_to_update.append(pos)
+
+    if not positions_to_update:
+        return True, "Не удалось обновить цены ни для одной из позиций."
+
+    # Вызываем новую функцию для пакетного обновления
+    if not sheets_service.batch_update_positions(positions_to_update):
+        return False, "Ошибка при пакетной записи обновленных позиций."
+
+    msg = f"Успешно обновлены цены для {len(positions_to_update)} позиций."
+    logger.info(msg)
+    return True, msg
+
+
+# --- Главный блок запуска ---
+if __name__ == "__main__":
+    logger.info("Сервис обновления цен запущен в циклическом режиме.")
     while True:
-        await update_prices_and_pnl()
-        logger.info(
-            f"Ожидание следующего обновления через {update_interval} секунд...")
-        await asyncio.sleep(update_interval)
-
-if __name__ == '__main__':
-    try:
-        asyncio.run(main_loop())
-    except KeyboardInterrupt:
-        logger.info("Price updater остановлен вручную.")
-    finally:
-        logger.info("Завершение работы price_updater, закрытие сессий...")
-        asyncio.run(close_all_ccxt_exchanges())
-        logger.info("Price updater завершен.")
+        try:
+            success, message = update_prices_and_pnl()
+            status = "OK" if success else "ERROR"
+            
+            target_timezone = timezone(timedelta(hours=config.TZ_OFFSET_HOURS))
+            timestamp = datetime.now(timezone.utc).astimezone(target_timezone)
+            sheets_service.update_system_status(status, timestamp)
+            
+            if success:
+                logger.info(f"Цикл обновления цен завершен. {message}")
+            else:
+                logger.error(f"Цикл обновления цен завершился с ошибкой: {message}")
+        except Exception as e:
+            logger.critical(f"Критическая ошибка в главном цикле обновления цен: {e}", exc_info=True)
+            sheets_service.update_system_status("CRITICAL_ERROR", datetime.now())
+        
+        logger.info(f"Следующий запуск через {config.PRICE_UPDATE_INTERVAL_SECONDS} секунд.")
+        time.sleep(config.PRICE_UPDATE_INTERVAL_SECONDS)

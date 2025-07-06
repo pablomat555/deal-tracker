@@ -1,12 +1,16 @@
-# locales.py
 import streamlit as st
 import config
 
+# Инициализация языка в сессии, если он еще не установлен
 if 'lang' not in st.session_state:
     st.session_state['lang'] = 'ru'
 
 TRANSLATIONS = {
     'ru': {
+        # --- [НОВОЕ] Ключ для переключателя языка ---
+        'language_selector_label': "🌐 Язык / Language",
+
+        # --- Существующие ключи ---
         'app_title': "Финансовый Дэшборд",
         'update_button': "🔄 Обновить",
         'refresh_page_button': "🔄 Обновить данные",
@@ -31,7 +35,7 @@ TRANSLATIONS = {
         'win_rate': "Win Rate",
         'profit_factor': "Profit Factor",
         'total_closed_trades': "Закрыто сделок",
-        'portfolio_structure_header': "Общая структура портфеля", # <-- ИЗМЕНЕНО
+        'portfolio_structure_header': "Общая структура портфеля",
         'chart_asset_value': "Стоимость активов в портфеле",
         'chart_asset': "Актив",
         'chart_value': "Стоимость",
@@ -54,7 +58,30 @@ TRANSLATIONS = {
         'page_movements_header': "🌊 Движение Средств",
         'external_source': "Внешний источник",
         'external_destination': "Внешнее направление",
-        # --- Колонки таблиц ---
+        'Всего введено': "Всего введено",
+        'Всего выведено': "Всего выведено",
+        'Детализация движений': "Детализация движений",
+        'page_manual_entry_title': "Ручной Ввод",
+        'page_manual_entry_header': "Ручной Ввод Данных",
+        'manual_entry_caption': "Эта страница предназначена для ручного добавления сделок и финансовых операций в систему.",
+        'add_trade_subheader': "Добавить сделку",
+        'add_movement_subheader': "Добавить движение средств",
+        'col_symbol_placeholder': "Символ (напр., BTC/USDT)",
+        'col_asset_placeholder': "Актив (напр., USDT)",
+        'col_time': "Время",
+        'add_trade_button': "Добавить сделку",
+        'add_button': "Добавить",
+        'processing': "Обработка...",
+        'error_fields_required': "Поля 'Символ', 'Количество' и 'Цена' обязательны и должны быть > 0.",
+        'error_asset_amount_required': "Поля 'Актив' и 'Сумма' обязательны и должны быть > 0.",
+        'error_generic': "Ошибка",
+        'success_trade_added': "✅ Сделка добавлена!",
+        'success_movement_added': "✅ Операция '{m_type}' успешно добавлена!",
+        'col_destination_account': "Счет назначения (КУДА)",
+        'col_source_account': "Счет списания (ОТКУДА)",
+        'tab_trades': "📈 Сделки",
+        'tab_movements': "💸 Движения Средств",
+        'sl_tp_expander': "Дополнительно: Stop Loss / Take Profit",
         'col_symbol': "Актив",
         'col_exchange': "Биржа",
         'col_qty': "Кол-во",
@@ -67,7 +94,7 @@ TRANSLATIONS = {
         'col_pnl_percent': "Прибыль, %",
         'col_pnl_sum': f"Прибыль, {config.BASE_CURRENCY}",
         'current_pnl': f"Нереал. PNL, {config.BASE_CURRENCY}",
-        'col_notes': "Заметка",
+        'col_notes': "Заметки (опционально)",
         'col_opened': "Дата открытия",
         'col_buy_price': "Цена покупки",
         'col_sell_price': "Цена продажи",
@@ -87,14 +114,23 @@ TRANSLATIONS = {
         'col_value_currency': f'Стоимость, {config.BASE_CURRENCY}',
         'col_share_percent': 'Доля, %',
         'col_icon': "Иконка",
-        'col_icon_label': " ", 
+        'col_icon_label': " ",
         'col_asset': "Актив",
         'col_location': "Местоположение",
         'col_current_price': "Текущая цена",
-        # --- КЛЮЧИ ДЛЯ ЗАКРЫТЫХ СДЕЛОК ---
         'closed_trades_header': "📈 Учет закрытых сделок (FIFO)",
         'col_timestamp_closed': "Дата закрытия",
-        # --- Сообщения об отсутствии данных ---
+        'col_sl': "SL",
+        'col_tp1': "TP1",
+        'col_tp2': "TP2",
+        'col_tp3': "TP3",
+        'risk_overview_header': "Обзор Рисков по Позициям",
+        'col_risk_usd': "Риск, $",
+        'open_trades_header': "Анализ открытых позиций (по лотам)",
+        'col_date_buy': "Дата покупки",
+        'col_qty_deal': "Кол-во в сделке",
+        'col_qty_left': "Остаток",
+        'show_more_button': "Показать еще 10",
         'no_movements_data': "Нет данных о движении средств.",
         'no_stablecoin_data': "Нет данных о балансах стейблкоинов для отображения.",
         'no_capital_structure_data': "Нет данных для отображения общей структуры капитала.",
@@ -114,7 +150,7 @@ TRANSLATIONS = {
         'no_core_records': "Нет записей в базовых сделках (Core Trades).",
         'no_portfolio_data_after_filter': "Нет данных по выбранным фильтрам.",
         'no_data_for_display': "Нет данных, соответствующих фильтрам.",
-        # --- Ключи для страницы Портфеля ---
+        'no_risk_data': "Нет открытых позиций с установленным Stop Loss для анализа рисков.",
         'asset_allocation_header': "Структура по активам",
         'asset_distribution_title': "Распределение по активам",
         'location_allocation_header': "Структура по биржам/счетам",
@@ -127,8 +163,34 @@ TRANSLATIONS = {
         'Счет': "Счет",
         'Сумма, $': "Сумма, $",
         'Детализация всего портфеля': "Детализация всего портфеля",
+        'timezone_setting_label': "Ваш часовой пояс (смещение от UTC)",
+        'timezone_setting_help': "Укажите ваше смещение от UTC. Например, для UTC+3 введите 3.",
+        'period_selector_label': "Изменение за:",
+        'delta_format_string': "{value:+.2f}% / {period}",
+        'period_day': "День",
+        'period_month': "Месяц",
+        'period_year': "Год",
+        'page_manage_trades_title': "Управление Сделками",
+        'page_manage_trades_header': "Управление Сделками",
+        'error_loading_data_expander': "Обнаружены ошибки при чтении данных",
+        'refresh_data_button': "Обновить список сделок",
+        'no_core_trades_to_manage': "Нет сделок для управления.",
+        'select_trades_to_delete_header': "Выберите сделки для удаления",
+        'select_trades_to_delete_label': "Сделки для удаления",
+        'delete_confirmation_header': "Подтверждение удаления",
+        'delete_warning': "ВНИМАНИЕ: Это действие необратимо! Удаленные строки нельзя будет восстановить. Убедитесь, что вы выбрали правильные сделки.",
+        'you_have_selected_for_deletion': "Вы выбрали для удаления следующие сделки:",
+        'delete_button_confirm': "Да, удалить выбранные сделки",
+        'deleting_in_progress': "Удаление... Пожалуйста, подождите.",
+        'delete_success_message': "Успешно удалено {count} сделок.",
+        'delete_post_action_info': "Данные обновлены. Список сделок перезагружен.",
+        'delete_error_message': "Произошла ошибка при удалении сделок.",
     },
     'en': {
+        # --- [NEW] Key for the language selector ---
+        'language_selector_label': "🌐 Language / Язык",
+
+        # --- Existing keys ---
         'app_title': "Financial Dashboard",
         'update_button': "🔄 Refresh",
         'refresh_page_button': "🔄 Refresh Data",
@@ -153,7 +215,7 @@ TRANSLATIONS = {
         'win_rate': "Win Rate",
         'profit_factor': "Profit Factor",
         'total_closed_trades': "Trades Closed",
-        'portfolio_structure_header': "Overall Portfolio Structure", # <-- ИЗМЕНЕНО
+        'portfolio_structure_header': "Overall Portfolio Structure",
         'chart_asset_value': "Value of Assets in Portfolio",
         'chart_asset': "Asset",
         'chart_value': "Value",
@@ -176,7 +238,30 @@ TRANSLATIONS = {
         'page_movements_header': "🌊 Fund Movements",
         'external_source': "External Source",
         'external_destination': "External Destination",
-        # --- Table Columns ---
+        'Всего введено': "Total Deposited",
+        'Всего выведено': "Total Withdrawn",
+        'Детализация движений': "Movements Details",
+        'page_manual_entry_title': "Manual Entry",
+        'page_manual_entry_header': "Manual Data Entry",
+        'manual_entry_caption': "This page is for manually adding trades and financial transactions to the system.",
+        'add_trade_subheader': "Add Trade",
+        'add_movement_subheader': "Add Fund Movement",
+        'col_symbol_placeholder': "Symbol (e.g., BTC/USDT)",
+        'col_asset_placeholder': "Asset (e.g., USDT)",
+        'col_time': "Time",
+        'add_trade_button': "Add Trade",
+        'add_button': "Add",
+        'processing': "Processing...",
+        'error_fields_required': "Fields 'Symbol', 'Quantity', and 'Price' are required and must be > 0.",
+        'error_asset_amount_required': "Fields 'Asset' and 'Amount' are required and must be > 0.",
+        'error_generic': "Error",
+        'success_trade_added': "✅ Trade added successfully!",
+        'success_movement_added': "✅ Operation '{m_type}' added successfully!",
+        'col_destination_account': "Destination Account (TO)",
+        'col_source_account': "Source Account (FROM)",
+        'tab_trades': "📈 Trades",
+        'tab_movements': "💸 Fund Movements",
+        'sl_tp_expander': "Optional: Stop Loss / Take Profit",
         'col_symbol': "Asset",
         'col_exchange': "Exchange",
         'col_qty': "Qty",
@@ -189,7 +274,7 @@ TRANSLATIONS = {
         'col_pnl_percent': "Profit, %",
         'col_pnl_sum': f"Profit, {config.BASE_CURRENCY}",
         'current_pnl': f"Unreal. PNL, {config.BASE_CURRENCY}",
-        'col_notes': "Note",
+        'col_notes': "Notes (optional)",
         'col_opened': "Date Opened",
         'col_buy_price': "Buy Price",
         'col_sell_price': "Sell Price",
@@ -209,14 +294,23 @@ TRANSLATIONS = {
         'col_value_currency': f'Value, {config.BASE_CURRENCY}',
         'col_share_percent': 'Share, %',
         'col_icon': "Icon",
-        'col_icon_label': " ", 
+        'col_icon_label': " ",
         'col_asset': "Asset",
         'col_location': "Location",
         'col_current_price': "Current Price",
-        # --- KEYS FOR CLOSED TRADES ---
         'closed_trades_header': "📈 Closed Trades Record (FIFO)",
         'col_timestamp_closed': "Date Closed",
-        # --- No Data Messages ---
+        'col_sl': "SL",
+        'col_tp1': "TP1",
+        'col_tp2': "TP2",
+        'col_tp3': "TP3",
+        'risk_overview_header': "Position Risk Overview",
+        'col_risk_usd': "Risk, $",
+        'open_trades_header': "Open Trades Analysis (by Lots)",
+        'col_date_buy': "Buy Date",
+        'col_qty_deal': "Deal Qty",
+        'col_qty_left': "Remainder",
+        'show_more_button': "Show 10 more",
         'no_movements_data': "No fund movement data available.",
         'no_stablecoin_data': "No stablecoin balance data to display.",
         'no_capital_structure_data': "No data to display the overall capital structure.",
@@ -224,7 +318,7 @@ TRANSLATIONS = {
         'no_crypto_in_accounts': "No cryptocurrency assets in the selected accounts.",
         'no_portfolio_data': "Data for building the portfolio has not been generated.",
         'no_data_for_analytics': "No data for general analytics.",
-        'no_open_positions': "There are currently no open positions.",
+        'no_open_positions': "No open positions at the moment.",
         'no_open_positions_to_display': "No open positions match the filters.",
         'no_data_in_table': "No data to display in the table.",
         'select_exchange_warning': "Select at least one exchange to display data.",
@@ -236,7 +330,7 @@ TRANSLATIONS = {
         'no_core_records': "No records in Core Trades.",
         'no_portfolio_data_after_filter': "No data for the selected filters.",
         'no_data_for_display': "No data matching the filters.",
-        # --- Keys for Portfolio page ---
+        'no_risk_data': "No open positions with a Stop Loss set for risk analysis.",
         'asset_allocation_header': "Asset Allocation",
         'asset_distribution_title': "Asset Distribution",
         'location_allocation_header': "Structure by Exchange/Account",
@@ -249,9 +343,30 @@ TRANSLATIONS = {
         'Счет': "Account",
         'Сумма, $': "Amount, $",
         'Детализация всего портфеля': "Full Portfolio Details",
+        'timezone_setting_label': "Your Timezone (UTC Offset)",
+        'timezone_setting_help': "Specify your offset from UTC. For example, for UTC+3, enter 3.",
+        'period_selector_label': "Change over:",
+        'delta_format_string': "{value:+.2f}% vs {period}",
+        'period_day': "Day",
+        'period_month': "Month",
+        'period_year': "Year",
+        'page_manage_trades_title': "Manage Trades",
+        'page_manage_trades_header': "Manage Trades",
+        'error_loading_data_expander': "Errors detected while reading data",
+        'refresh_data_button': "Refresh Trades List",
+        'no_core_trades_to_manage': "No trades to manage.",
+        'select_trades_to_delete_header': "Select trades to delete",
+        'select_trades_to_delete_label': "Trades to delete",
+        'delete_confirmation_header': "Deletion Confirmation",
+        'delete_warning': "WARNING: This action is irreversible! Deleted rows cannot be recovered. Make sure you have selected the correct trades.",
+        'you_have_selected_for_deletion': "You have selected the following trades for deletion:",
+        'delete_button_confirm': "Yes, delete selected trades",
+        'deleting_in_progress': "Deleting... Please wait.",
+        'delete_success_message': "Successfully deleted {count} trades.",
+        'delete_post_action_info': "Data updated. The trade list has been reloaded.",
+        'delete_error_message': "An error occurred while deleting trades.",
     }
 }
-
 
 def t(key):
     """
@@ -259,5 +374,34 @@ def t(key):
     Если перевод не найден, возвращает сам ключ для удобства отладки.
     """
     lang = st.session_state.get('lang', 'ru')
-    # Возвращаем ключ, если перевод не найден, для легкой отладки
     return TRANSLATIONS.get(lang, {}).get(key, key)
+
+def render_language_selector():
+    """
+    [НОВАЯ ФУНКЦИЯ]
+    Отображает виджет для выбора языка.
+    При изменении языка страница автоматически перезагружается.
+    """
+    lang_options = ['ru', 'en']
+    lang_display = {'ru': 'Русский', 'en': 'English'}
+
+    current_lang = st.session_state.get('lang', 'ru')
+    try:
+        lang_index = lang_options.index(current_lang)
+    except ValueError:
+        lang_index = 0 # По умолчанию 'ru'
+
+    # Виджет выбора языка
+    selected_lang = st.radio(
+        label=t('language_selector_label'),
+        options=lang_options,
+        index=lang_index,
+        format_func=lambda lang_code: lang_display.get(lang_code, lang_code),
+        horizontal=True,
+        key='language_selector' # Уникальный ключ для виджета
+    )
+
+    # Обновляем язык в состоянии сессии, если он изменился
+    if selected_lang != st.session_state.get('lang'):
+        st.session_state['lang'] = selected_lang
+        st.rerun()
