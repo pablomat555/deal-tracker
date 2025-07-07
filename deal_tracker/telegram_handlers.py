@@ -12,6 +12,7 @@ import sheets_service
 import analytics_service
 from trade_logger import log_trade, log_fund_movement
 from telegram_parser import parse_command_args_advanced
+from models import TradeData, PositionData, BalanceData # Убедимся, что импортируем модели
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def normalize_amount_string(amount_str: str) -> Optional[Decimal]:
             f"Не удалось преобразовать строку '{amount_str}' в Decimal.")
         return None
 
-
+# --- Декоратор и вспомогательные функции (без изменений) ---
 def admin_only(func):
     """Декоратор для ограничения доступа к командам только для администраторов."""
     async def wrapped(update: Update, context: CallbackContext, *args, **kwargs):
@@ -82,6 +83,7 @@ async def start_command(update: Update, context: CallbackContext) -> None:
         "<code>/transfer ASSET QTY FROM TO [ключи...]</code>\n"
         "  <i>Опц. ключи: date, notes, tx_id, fee, fee_asset</i>\n"
         "--- <u>Отчеты</u> ---\n"
+        "/balance - Сводка по балансам\n"
         "/portfolio - Открытые позиции\n"
         "/history SYMBOL - История сделок по символу\n"
         "/average SYMBOL - Средняя цена входа по символу\n"
@@ -215,40 +217,70 @@ async def transfer_command(update: Update, context: CallbackContext) -> None:
     await movement_command(update, context, move_type='TRANSFER')
 
 
+# --- [ОБНОВЛЕНО] Команды отчетов ---
 @admin_only
 async def portfolio_command(update: Update, context: CallbackContext) -> None:
-    positions = sheets_service.get_all_open_positions()
+    logger.info("[ОТЛАДКА] Вызвана команда /portfolio")
+    
+    positions, errors = sheets_service.get_all_records(config.OPEN_POSITIONS_SHEET_NAME, PositionData)
+    
+    if errors:
+        await update.message.reply_text(f"❌ Ошибка чтения позиций: {errors[0]}")
+        return
+
     if not positions:
         await update.message.reply_text("Нет открытых позиций.")
         return
+        
     reply_text = "<u><b>💼 Открытые Позиции:</b></u>\n\n"
     for pos in positions:
-        pnl_str = f"{pos.unrealized_pnl:+.2f}" if pos.unrealized_pnl is not None else "N/A"
+        pnl_val = utils.parse_decimal(pos.unrealized_pnl) or Decimal('0')
+        pnl_str = f"{pnl_val:+.2f}"
+        
         reply_text += (f"<b>{pos.symbol}</b> ({pos.exchange})\n"
-                       f"  Кол-во: {pos.net_amount:.4f}\n"
-                       f"  Ср.вход: {pos.avg_entry_price:.4f}\n"
-                       f"  Нереал.PNL: {pnl_str}\n\n")
+                       f"  Кол-во: <code>{pos.net_amount:.4f}</code>\n"
+                       f"  Ср.вход: <code>{pos.avg_entry_price:.4f}</code>\n"
+                       f"  Нереал.PNL: <code>{pnl_str} $</code>\n\n")
+                       
     await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
 
 
 @admin_only
 async def history_command(update: Update, context: CallbackContext) -> None:
+    """
+    [ИСПРАВЛЕНО] Показывает историю сделок по тикеру,
+    используя "умный" поиск (например, 'AVAX' найдет и 'AVAX', и 'AVAX/USDT').
+    """
     if not context.args:
         await update.message.reply_text("Использование: <code>/history SYMBOL</code>", parse_mode=ParseMode.HTML)
         return
+
     symbol_to_find = context.args[0].upper()
-    all_trades = sheets_service.get_all_core_trades()
-    trades = [t for t in all_trades if t.symbol and t.symbol.upper()
-              == symbol_to_find]
+    
+    all_trades, errors = sheets_service.get_all_records(config.CORE_TRADES_SHEET_NAME, TradeData)
+
+    if errors:
+        await update.message.reply_text(f"❌ Ошибка чтения истории: {errors[0]}")
+        return
+
+    trades = [
+        t for t in all_trades if t.symbol and (
+            t.symbol.upper() == symbol_to_find or
+            t.symbol.upper().startswith(symbol_to_find + '/')
+        )
+    ]
+    
     if not trades:
         await update.message.reply_text(f"Нет истории сделок для {symbol_to_find}.")
         return
 
     trades.sort(key=lambda t: t.timestamp, reverse=True)
+    
     reply_text = f"<u><b>📜 История сделок для {symbol_to_find} (макс. 10):</b></u>\n"
     for trade in trades[:10]:
         reply_text += (f"<pre>{trade.timestamp:%Y-%m-%d %H:%M} {trade.trade_type:<4} "
-                       f"{trade.amount:<10.4f} {trade.symbol} @ {trade.price:<12.4f}</pre>\n")
+                       f"{trade.amount:<8.4f} {trade.symbol:<10} @ {trade.price:<10.4f}</pre>\n")
+                       
     await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
 
 
@@ -258,12 +290,15 @@ async def average_command(update: Update, context: CallbackContext) -> None:
     if not context.args:
         await update.message.reply_text("Использование: <code>/average SYMBOL</code>", parse_mode=ParseMode.HTML)
         return
-    
-    symbol_to_find = context.args[0].upper()
-    all_positions = sheets_service.get_all_open_positions()
 
-    # Умный поиск: ищет и точное совпадение (ETH/USDT), 
-    # и совпадение по базовому активу (ETH)
+    symbol_to_find = context.args[0].upper()
+    
+    all_positions, errors = sheets_service.get_all_records(config.OPEN_POSITIONS_SHEET_NAME, PositionData)
+    
+    if errors:
+        await update.message.reply_text(f"❌ Ошибка чтения позиций: {errors[0]}")
+        return
+
     position = next(
         (p for p in all_positions if p.symbol and (
             p.symbol.upper() == symbol_to_find or 
@@ -282,12 +317,26 @@ async def average_command(update: Update, context: CallbackContext) -> None:
 
 @admin_only
 async def updater_status_command(update: Update, context: CallbackContext) -> None:
-    status, timestamp = sheets_service.get_system_status()
-    if status is None and timestamp is None:
-        await update.message.reply_text("🟡 Price Updater: нет данных о статусе.")
-        return
-    reply_msg = f"🟢 Price Updater: посл. обновление в <b>{timestamp}</b>, статус: <b>{status}</b>."
-    await update.message.reply_text(reply_msg, parse_mode=ParseMode.HTML)
+    """
+    [ИСПРАВЛЕНО] Показывает статус фонового сервиса обновления цен,
+    корректно обрабатывая возможные ошибки.
+    """
+    try:
+        status, timestamp = sheets_service.get_system_status()
+
+        if status is None and timestamp is None:
+            await update.message.reply_text("🟡 Price Updater: нет данных о статусе. Возможно, сервис еще ни разу не запускался.")
+            return
+
+        status_str = status or "N/A"
+        timestamp_str = timestamp or "N/A"
+
+        reply_msg = f"🟢 Price Updater:\n- Статус: <b>{status_str}</b>\n- Посл. обновление: <b>{timestamp_str}</b>"
+        await update.message.reply_text(reply_msg, parse_mode=ParseMode.HTML)
+
+    except Exception as e:
+        logger.error(f"Ошибка в команде /updater_status: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Произошла ошибка при получении статуса: {e}")
 
 
 @admin_only
@@ -298,3 +347,44 @@ async def update_analytics_command(update: Update, context: CallbackContext) -> 
         await update.message.reply_text(f"✅ Обновление аналитики завершено!\n{message}", parse_mode=ParseMode.HTML)
     else:
         await update.message.reply_text(f"❌ Ошибка обновления аналитики:\n{message}", parse_mode=ParseMode.HTML)
+
+
+# [НОВАЯ ФУНКЦИЯ]
+@admin_only
+async def balance_command(update: Update, context: CallbackContext) -> None:
+    """Отправляет сводку по балансам стейблкоинов."""
+    logger.info("[HANDLER] Получена команда /balance")
+    
+    all_balances, errors = sheets_service.get_all_records(config.ACCOUNT_BALANCES_SHEET_NAME, BalanceData)
+    
+    if errors:
+        await update.message.reply_text(f"❌ Ошибка чтения балансов: {errors[0]}")
+        return
+
+    stable_balances = [b for b in all_balances if b.asset in config.INVESTMENT_ASSETS and b.balance > 0]
+
+    if not stable_balances:
+        await update.message.reply_text("Нет данных о балансах стейблкоинов.")
+        return
+
+    # Группируем балансы по счетам
+    balances_by_account = {}
+    for balance in stable_balances:
+        account_name = balance.account_name or "Без имени"
+        if account_name not in balances_by_account:
+            balances_by_account[account_name] = []
+        balances_by_account[account_name].append(balance)
+
+    total_stables_value = sum(b.balance for b in stable_balances if b.balance)
+    
+    reply_text = f"<u><b>💰 Сводка по стейблкоинам:</b></u>\n"
+    reply_text += f"<b>Итого:</b> <code>{total_stables_value:,.2f} $</code>\n\n"
+
+    for account, balances in balances_by_account.items():
+        account_total = sum(b.balance for b in balances if b.balance)
+        reply_text += f"<b>📍 {account.capitalize()}:</b> <code>{account_total:,.2f} $</code>\n"
+        for b in balances:
+            reply_text += f"  - {b.asset}: <code>{b.balance:,.2f}</code>\n"
+        reply_text += "\n"
+
+    await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)

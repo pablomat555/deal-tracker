@@ -16,7 +16,8 @@ from telegram_handlers import (
     history_command,
     average_command,
     updater_status_command,
-    update_analytics_command
+    update_analytics_command,
+    balance_command  # [ДОБАВЛЕНО]
 )
 
 # Настройка логирования
@@ -56,18 +57,21 @@ def main() -> None:
     # Регистрация обработчиков команд
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    
+    # --- Команды торговли и финансов ---
     application.add_handler(CommandHandler("buy", buy_command))
     application.add_handler(CommandHandler("sell", sell_command))
     application.add_handler(CommandHandler("deposit", deposit_command))
     application.add_handler(CommandHandler("withdraw", withdraw_command))
     application.add_handler(CommandHandler("transfer", transfer_command))
+    
+    # --- Команды отчетов ---
+    application.add_handler(CommandHandler("balance", balance_command)) # [ДОБАВЛЕНО]
     application.add_handler(CommandHandler("portfolio", portfolio_command))
     application.add_handler(CommandHandler("history", history_command))
     application.add_handler(CommandHandler("average", average_command))
-    application.add_handler(CommandHandler(
-        "updater_status", updater_status_command))
-    application.add_handler(CommandHandler(
-        "update_analytics", update_analytics_command))
+    application.add_handler(CommandHandler("updater_status", updater_status_command))
+    application.add_handler(CommandHandler("update_analytics", update_analytics_command))
 
     logger.info("Бот запущен и готов принимать команды.")
     application.run_polling()

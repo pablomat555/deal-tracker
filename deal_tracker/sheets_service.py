@@ -288,6 +288,28 @@ def update_or_create_analytics_record(analytics_data: AnalyticsData) -> bool:
         invalidate_cache(sheet_name); return True
     except Exception as e: logger.error(f"Ошибка обновления/создания записи аналитики: {e}", exc_info=True); return False
 
+# [ДОБАВЛЕНО]
+def get_system_status() -> tuple[Optional[str], Optional[str]]:
+    """Читает статус и время последнего обновления из листа System_Status."""
+    sheet_name = config.SYSTEM_STATUS_SHEET_NAME
+    try:
+        sheet = _get_sheet_by_name(sheet_name)
+        if not sheet:
+            return None, None
+        
+        # Запрашиваем значения из двух ячеек
+        ranges = [config.UPDATER_LAST_RUN_CELL, config.UPDATER_STATUS_CELL]
+        results = sheet.batch_get(ranges)
+        
+        # Безопасно извлекаем значения
+        timestamp_str = results[0]['values'][0][0] if results and len(results) > 0 and results[0].get('values') else None
+        status_str = results[1]['values'][0][0] if results and len(results) > 1 and results[1].get('values') else None
+        
+        return status_str, timestamp_str
+    except Exception as e:
+        logger.error(f"Ошибка чтения статуса системы: {e}")
+        return None, None
+
 # --- Публичные "ярлыки" для бота ---
 def add_trade(trade_data: TradeData) -> bool: return append_record(config.CORE_TRADES_SHEET_NAME, trade_data)
 def add_movement(movement_data: MovementData) -> bool: return append_record(config.FUND_MOVEMENTS_SHEET_NAME, movement_data)
