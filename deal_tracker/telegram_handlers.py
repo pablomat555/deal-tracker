@@ -286,15 +286,16 @@ async def history_command(update: Update, context: CallbackContext) -> None:
 
 @admin_only
 async def average_command(update: Update, context: CallbackContext) -> None:
-    """[ИСПРАВЛЕНО] Ищет позицию по точному совпадению или по базовому активу."""
+    """
+    [УЛУЧШЕНО] Показывает среднюю цену входа и текущий рост/падение в %.
+    """
     if not context.args:
         await update.message.reply_text("Использование: <code>/average SYMBOL</code>", parse_mode=ParseMode.HTML)
         return
-
+    
     symbol_to_find = context.args[0].upper()
-    
     all_positions, errors = sheets_service.get_all_records(config.OPEN_POSITIONS_SHEET_NAME, PositionData)
-    
+
     if errors:
         await update.message.reply_text(f"❌ Ошибка чтения позиций: {errors[0]}")
         return
@@ -309,9 +310,23 @@ async def average_command(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text(f"Нет открытой позиции для {symbol_to_find}.")
         return
 
+    # --- [НОВЫЙ БЛОК] Расчет и форматирование роста/падения ---
+    price_change_str = ""
+    current_price = utils.parse_decimal(position.current_price)
+    avg_entry = utils.parse_decimal(position.avg_entry_price)
+
+    if current_price and avg_entry and avg_entry > 0:
+        price_change_pct = ((current_price / avg_entry) - 1) * 100
+        # Форматируем строку с цветом в зависимости от знака
+        icon = "📈" if price_change_pct >= 0 else "📉"
+        price_change_str = f"\n  {icon} Рост/Падение: <code>{price_change_pct:+.2f}%</code>"
+    # --- КОНЕЦ НОВОГО БЛОКА ---
+
     reply_text = (f"<u><b>📊 Средняя цена для {position.symbol}:</b></u>\n"
                   f"  Общее кол-во: <code>{position.net_amount:.4f}</code>\n"
-                  f"  Средняя цена входа: <code>{position.avg_entry_price:.4f}</code>\n")
+                  f"  Средняя цена входа: <code>{position.avg_entry_price:.4f}</code>"
+                  f"{price_change_str}") # Добавляем новую строку в ответ
+
     await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
 
 
